@@ -1,0 +1,168 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="min-h-screen flex flex-col items-center justify-center bg-transparent px-4">
+  <!-- Hero -->
+  <h1 class="text-4xl md:text-5xl font-bold text-gray-800 mb-2">
+    Let's Create Your <span class="text-purple-600">AI Educational Video</span>
+  </h1>
+  <p class="text-lg text-gray-600 mb-8">
+    First craft your script or write video idea
+  </p>
+
+  <!-- Input Card -->
+  <div class="w-full max-w-2xl">
+    <textarea 
+      id="concept"
+      rows="8"
+      class="w-full p-4 border-2 border-purple-400 rounded-t-lg text-black placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-secondary"
+      placeholder="Type your video idea here…"></textarea>
+
+    <!-- Bottom controls -->
+    <div class="flex items-center justify-between bg-white border-2 border-t-0 border-purple-400 rounded-b-lg px-4 py-3">
+      <button 
+        id="inspire"
+        class="flex items-center text-gray-700 hover:text-gray-900">
+        <!-- small cube icon -->
+        <svg class="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
+          <path d="M2 5.5v9L10 19l8-4.5v-9L10 1 2 5.5zM10 3.18l6 3.37v6.91l-6 3.37-6-3.37V6.55l6-3.37z"/>
+          <path d="M9 13.41V6.59l-5-2.8v6.62l5 2.8zm2 0l5-2.8V3.79l-5 2.8v6.82z"/>
+        </svg>
+      </button>
+
+      <div class="flex items-center">
+        <span class="text-gray-500 mr-2">Enhance script</span>
+        <label class="switch">
+          <input type="checkbox" id="enhanceToggle">
+          <span class="slider"></span>
+        </label>
+      </div>
+    </div>
+
+    <!-- Next button -->
+    <button 
+      id="nextBtn"
+      class="mt-6 w-full bg-emerald-500 hover:bg-emerald-600
+             text-white font-semibold py-4 rounded-lg transition">
+      Generate
+    </button>
+  </div>
+  
+  <!-- ───────────────────────────────────── -->
+  <!-- Loading Overlay (hidden by default) -->
+  <div id="loading" class="hidden fixed inset-0 z-50 bg-black bg-opacity-60 flex flex-col items-center justify-center">
+    <div class="loading-spinner mb-4"></div>
+    <p class="text-white text-lg">Generating your animation…</p>
+  </div>
+
+  <!-- Results Section (hidden by default) -->
+  <div id="results" class="hidden mt-8 flex flex-col items-center w-full max-w-2xl px-4">
+    <video id="animationPreview" controls class="w-full rounded-lg shadow-lg bg-black"></video>
+    <a id="downloadVideo" href="#" download
+       class="mt-4 bg-secondary hover:bg-secondary-dark text-white font-medium px-5 py-2 rounded-lg transition hidden">
+      Download MP4
+    </a>
+  </div>
+  <!-- ───────────────────────────────────── -->
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+window.addEventListener('DOMContentLoaded', () => {
+  const nextBtn = document.getElementById('nextBtn');
+  if (!nextBtn) return;  // no Next button? stop here
+
+  nextBtn.addEventListener('click', async (e) => {
+    e.preventDefault();
+    const concept = document.getElementById('concept')?.value.trim() || '';
+    if (!concept) {
+      return alert('Please enter a concept to visualize.');
+    }
+
+    // show/hide panels only if they exist
+    document.getElementById('loading')?.classList.remove('hidden');
+    document.getElementById('results')?.classList.add('hidden');
+    document.getElementById('error')?.classList.add('hidden');
+    document.getElementById('warningArea')?.classList.add('hidden');
+
+    try {
+      const res = await fetch('/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ concept }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `Status ${res.status}`);
+
+      // show results
+      if (data.final_video_url) {
+        // if you have a <div id="results"> container:
+        document.getElementById('results')?.classList.remove('hidden');
+
+        // update video & download elements if present
+        const vid = document.getElementById('animationPreview');
+        if (vid) { vid.src = data.final_video_url; vid.load(); }
+        const dl = document.getElementById('downloadVideo');
+        if (dl) { dl.href = data.final_video_url; dl.classList.remove('hidden'); }
+      }
+
+      // show warning if any
+      if (data.warning) {
+        const warnArea = document.getElementById('warningArea');
+        const warnMsg  = document.getElementById('warningMessage');
+        if (warnArea && warnMsg) {
+          warnMsg.textContent = data.warning;
+          warnArea.classList.remove('hidden');
+        } else {
+          console.warn('Warning:', data.warning);
+        }
+      }
+
+    } catch (err) {
+      // fallback if you removed the #error panel
+      alert(err.message);
+    } finally {
+      document.getElementById('loading')?.classList.add('hidden');
+    }
+  });
+});
+
+function showError(msg) {
+    document.getElementById('errorMessage').textContent = msg;
+    document.getElementById('error').classList.remove('hidden');
+    document.getElementById('results').classList.add('hidden');
+    document.getElementById('warningArea').classList.add('hidden');
+}
+
+function setExample(text) {
+    document.getElementById('concept').value = text;
+    // Clear previous results when setting a new example
+    document.getElementById('results').classList.add('hidden');
+    document.getElementById('error').classList.add('hidden');
+    document.getElementById('warningArea').classList.add('hidden');
+    document.getElementById('animationPreview').src = '';
+    document.getElementById('downloadVideo').classList.add('hidden');
+}
+
+const copyCodeBtn = document.getElementById('copyCode');
+copyCodeBtn.addEventListener('click', function() {
+    const codeToCopy = document.getElementById('generatedCode').textContent;
+    if (codeToCopy && codeToCopy !== '# Your generated code will appear here' && codeToCopy !== '# Final script code not available.') {
+        navigator.clipboard.writeText(codeToCopy).then(() => {
+            const originalText = this.innerHTML;
+            this.innerHTML = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg><span>Copied!</span>';
+            setTimeout(() => {
+                this.innerHTML = originalText;
+            }, 2000);
+        }).catch(err => {
+            console.error('Failed to copy code: ', err);
+            alert('Failed to copy code to clipboard.');
+        });
+    } else {
+        console.warn('No code available to copy.');
+    }
+});
+</script>
+{% endblock %}

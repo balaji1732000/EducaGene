@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual Environment
+env/
+
+# Configuration
+.env
+
+# Logs
+*.log
+mfput.log
+
+# Manim Output
+media_manim/
+
+# Temporary Files / Generated Content
+tmp_requests/
+static/videos/
+*.mp4
+*.wav
+
+# macOS
+.DS_Store
+
+# Installers
+*.pkg
+
+# Other specified folders
+previous_code/
+tests/
