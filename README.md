@@ -37,7 +37,7 @@ Before you begin, ensure you have the following installed on your system:
 
 1.  **Clone the Repository (if applicable):**
     ```bash
-    git clone <repository-url>
+    git clone https://github.com/balaji1732000/EducaGene.git
     cd manim-video-generator
     ```
 
