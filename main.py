@@ -12,14 +12,55 @@ from typing import TypedDict, List, Dict, Any, Optional, Literal
 import shutil  # Added missing import for subprocess utilities
 import re
 from logging import FileHandler
+import os
+import sys
+import logging
+import subprocess
+import shutil
+import uuid
+import json
+import time
+import traceback
+from datetime import datetime
+from typing import TypedDict, List, Dict, Any, Optional, Literal
+import shutil  # Added missing import for subprocess utilities
+import re
+from logging import FileHandler
+import os
+import sys
+import logging
+import subprocess
+import shutil
+import uuid
+import json
+import time
+import traceback
+from datetime import datetime
+from typing import TypedDict, List, Dict, Any, Optional, Literal
+import shutil  # Added missing import for subprocess utilities
+import re
+from logging import FileHandler
 import google.generativeai as genai
+
+# Load environment variables as early as possible
+from dotenv import load_dotenv
+load_dotenv()
 
 from flask import Flask, render_template, request, jsonify, url_for
 from manim import *
-from dotenv import load_dotenv
+# from dotenv import load_dotenv # Moved up
 from langgraph.graph import StateGraph, END
 from langchain_openai import AzureChatOpenAI
 import azure.cognitiveservices.speech as speechsdk
+
+# Load environment variables as early as possible
+load_dotenv()
+
+try:
+    import moviepy as mp
+except ImportError:
+    mp = None
+    logging.warning("moviepy not installed. Video concatenation and merging will fail.")
 
 try:
     import moviepy as mp
@@ -31,7 +72,7 @@ except ImportError:
 
 
 
-# Helper functions
+# Helper functions (Keep these here or move to utils if they are truly utilities)
 def sanitize_input(text: str) -> str:
     return ' '.join(text.strip().split())
 
@@ -48,11 +89,16 @@ from manim_video_generator.config import *
 from manim_video_generator.utils import sanitize_input, clean_code_string, fix_inline_latex, estimate_scene_time, upload_to_gemini, wait_for_files_active
 from manim_video_generator.llm_client import get_llm_client
 from manim_video_generator.state import WorkflowState
+# --- Structured imports ---
+from manim_video_generator.config import * # Assuming this sets up logging, paths etc.
+from manim_video_generator.utils import sanitize_input # Keep specific utils if needed elsewhere
+from manim_video_generator.state import WorkflowState
 from manim_video_generator.nodes import (
     setup_request_node,
     plan_video_node,
     generate_full_script_node,
-    evaluate_code_node,
+    # evaluate_code_node, # Removed old node
+    evaluate_script_and_video_node, # Added new node
     render_combined_video_node,
     generate_final_script_node,
     generate_audio_node,
@@ -159,7 +205,8 @@ nodes_to_add = [
     ('setup_request', setup_request_node),
     ('plan_video', plan_video_node),
     ('generate_full_script', generate_full_script_node),
-    ('evaluate_code', evaluate_code_node),
+    # ('evaluate_code', evaluate_code_node), # Removed old node
+    ('evaluate_script_and_video', evaluate_script_and_video_node), # Added new node
     ('render_combined_video', render_combined_video_node),
     ('generate_final_script', generate_final_script_node),
     ('generate_audio', generate_audio_node),
@@ -170,22 +217,37 @@ for name, fn in nodes_to_add:
 workflow.set_entry_point('setup_request')
 workflow.add_edge('setup_request', 'plan_video')
 workflow.add_edge('plan_video', 'generate_full_script')
-workflow.add_edge('generate_full_script', 'evaluate_code')
+
+# After generating script, go directly to rendering
+workflow.add_edge('generate_full_script', 'render_combined_video')
+
+# After rendering, check result and decide next step
 workflow.add_conditional_edges(
-    'evaluate_code', should_retry_full_script,
+    'render_combined_video',
+    check_render_result,
     {
-        'retry_script_generation': 'generate_full_script',
-        'proceed_to_render': 'render_combined_video'
-    }
-)
-workflow.add_conditional_edges(
-    'render_combined_video', check_render_result,
-    {
-        'render_success': 'generate_final_script',
+        # If render succeeds, go to the new combined evaluation node
+        'render_success': 'evaluate_script_and_video',
+        # If render fails but retries allowed, go back to generate script
         'retry_script_generation_render_error': 'generate_full_script',
-        'render_failed_proceed': 'generate_final_script'
+        # If render fails and max retries hit, still try evaluation (node handles missing video)
+        'render_failed_proceed': 'evaluate_script_and_video'
     }
 )
+
+# After combined evaluation, check if revision is needed
+workflow.add_conditional_edges(
+    'evaluate_script_and_video', # New source node for this decision
+    should_retry_full_script, # Re-use the same logic (checks code_eval_verdict)
+    {
+        # If revision needed, go back to generate script
+        'retry_script_generation': 'generate_full_script',
+        # If satisfied, proceed to generate voiceover script
+        'proceed_to_voiceover': 'generate_final_script' # Match the target name from should_retry_full_script
+    }
+)
+
+# Final steps remain the same
 workflow.add_edge('generate_final_script', 'generate_audio')
 workflow.add_edge('generate_audio', 'combine_final_video_audio')
 workflow.add_edge('combine_final_video_audio', END)

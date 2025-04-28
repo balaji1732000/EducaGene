@@ -5,7 +5,7 @@ from typing import List, Dict, Any, Optional, Literal
 class WorkflowState:
     user_concept: str
     request_id: Optional[str] = None
-    estimated_duration: float = 0.0
+    estimated_duration: float = 0.0 # Estimated duration based on generated script
     temp_dir: Optional[str] = None
     video_plan: Optional[List[Dict[str, Any]]] = None
     current_render_index: int = 0
@@ -19,10 +19,13 @@ class WorkflowState:
     final_video_path: Optional[str] = None
     final_video_url: Optional[str] = None
     error_message: Optional[str] = None
-    code_eval_verdict: Optional[Literal['SATISFIED', 'REVISION_NEEDED']] = None
-    script_revision_iteration: int = 0
-    max_script_revisions: int = 3
+    code_eval_verdict: Optional[Literal['SATISFIED', 'REVISION_NEEDED']] = None # Set by evaluation node
+    # Separate iteration counters and limits
+    render_error_iteration: int = 0
+    max_render_error_revisions: int = 3 # Max retries for render errors
+    evaluation_revision_iteration: int = 0
+    max_evaluation_revisions: int = 3 # Max retries for evaluation feedback (Increased to 3)
     current_code: Optional[str] = None
     full_script_path: Optional[str] = None
     all_scene_class_names: List[str] = field(default_factory=list)
-    evaluation_feedback: Optional[str] = None 
+    evaluation_feedback: Optional[str] = None # Consolidated feedback (from code OR combined code/video eval)

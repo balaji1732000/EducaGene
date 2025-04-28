@@ -48,9 +48,21 @@ def render_combined_video_node(state: WorkflowState) -> Dict[str, Any]:
             app.logger.debug(f"Manim stderr:\n{res.stderr}")
 
         if res.returncode != 0:
-            err_info = res.stderr or ''
-            app.logger.error(f"Manim render failed (Code {res.returncode}): {err_info}")
-            return {'rendering_error': err_info, 'video_path': None}
+            full_stderr = res.stderr or ''
+            traceback_start_marker = "Traceback (most recent call last):"
+            traceback_start_index = full_stderr.rfind(traceback_start_marker) # Find the last occurrence
+
+            if traceback_start_index != -1:
+                # Extract from the start of the traceback onwards
+                extracted_error = full_stderr[traceback_start_index:]
+                app.logger.info("Extracted traceback from Manim stderr.")
+            else:
+                # Fallback: Use the last ~1500 characters if traceback marker not found
+                extracted_error = full_stderr[-1500:]
+                app.logger.warning("Traceback marker not found in Manim stderr. Using tail end.")
+
+            app.logger.error(f"Manim render failed (Code {res.returncode}). Extracted Error Info:\n{extracted_error}")
+            return {'rendering_error': extracted_error, 'video_path': None}
 
         # Determine expected output path
         script_base = os.path.splitext(os.path.basename(script_path))[0]
@@ -78,4 +90,4 @@ def render_combined_video_node(state: WorkflowState) -> Dict[str, Any]:
     except Exception as e:
         err = f"Unexpected error during render: {e}"
         app.logger.error(err, exc_info=True)
-        return {'rendering_error': err, 'video_path': None} 
+        return {'rendering_error': err, 'video_path': None}

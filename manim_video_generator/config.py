@@ -7,8 +7,8 @@ from flask import Flask
 from manim import config as manim_config
 import google.generativeai as genai
 
-# Load environment variables
-load_dotenv()
+# Load environment variables (Moved to main.py)
+# load_dotenv()
 
 # Project root (parent of this config.py)
 APP_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
