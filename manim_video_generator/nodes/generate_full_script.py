@@ -12,7 +12,8 @@ def generate_full_script_node(state: WorkflowState) -> Dict[str, Any]:
     """Generates or revises a single Python script based on plan, evaluation feedback, or render error."""
     video_plan = state.video_plan
     raw_plan_text = state.error_message
-    user_concept = state.user_concept # 'user_concept' is required, default in get() was likely unnecessary
+    user_concept = state.user_concept
+    language = state.language # Get target language
     render_error = state.rendering_error
     feedback = state.evaluation_feedback # Consolidated feedback
     # Read separate iteration counters
@@ -123,9 +124,9 @@ Revise the single-class script now based on the combined evaluation feedback."""
         clear_error_field = 'evaluation_feedback'
 
     else: # Generation mode
-        prompt = f"""Generate **one single, complete, and runnable Manim Python script** containing **exactly ONE class** (e.g., `CombinedScene`) to explain '{user_concept}'.
+        prompt = f"""Generate **one single, complete, and runnable Manim Python script** containing **exactly ONE class** (e.g., `CombinedScene`) to explain '{user_concept}' in **{language}**.
 
-The video plan consists of the following scenes, which should be implemented **sequentially within the single `construct` method** of the class:
+The video plan consists of the following scenes (provided in {language}, with technical terms/formulas potentially in English), which should be implemented **sequentially within the single `construct` method** of the class:
 {full_plan_description}
 
 **VERY IMPORTANT REQUIREMENTS:**
@@ -134,14 +135,24 @@ The video plan consists of the following scenes, which should be implemented **s
     *   Inherit from `ThreeDScene` if the plan descriptions mention 3D elements or explicitly state the need for 3D.
     *   Otherwise, inherit from `Scene`.
 3.  **`construct` Method:** Implement all visual steps from the plan sequentially within the single `construct(self)` method. Use comments like `# --- Scene [Number] Start: [Scene Title] ---` to delineate logical scene blocks.
-4.  **LaTeX Handling:** Be very careful with LaTeX in `MathTex` and `Tex`. Use raw strings (r"...") or double backslashes (\\) for escaping where needed. Ensure correct math syntax (e.g., use `\text{{...}}` for plain text within math).
-5.  **Positioning & Clarity:** Position elements thoughtfully within the 16:9 frame using `.to_edge()`, `.shift()`, `.next_to()`, `.arrange()` etc. Avoid overlaps. Ensure text is readable.
-6.  **Animation Logic:** Use Manim objects (`MathTex`, `Text`, Shapes, etc.) and animations (`self.play`, `Create`, `Write`, `Transform`, etc.). **Crucially, ensure `self.add(object)` is called before animating it with `self.play(Transform(object, ...))` or `self.play(FadeOut(object))` if it wasn't already added via `Create` or `Write`.**
-7.  **Wait Times:** Use `self.wait(...)` appropriately between logical steps and scenes to control pacing.
-8.  **Self-Contained & Runnable:** The script must run without errors.
-9.  **CODE ONLY OUTPUT:** Your *entire response* must be **ONLY** the raw Python code for the complete script. **DO NOT** include *any* explanations, comments outside the code, greetings, summaries, or markdown fences.
+4.  **Language & Fonts:**
+    *   Generate all user-visible text content (e.g., inside `Text("...")`) in **{language}**.
+    *   **IMPORTANT:** If `{language}` is NOT English ('en-US', 'en-GB', etc.), you **MUST** specify an appropriate `font` parameter within the `Text(...)` object to ensure correct rendering. Examples:
+        *   For Hindi ('hi-IN'): `Text("...", font="Noto Sans Devanagari")`
+        *   For Tamil ('ta-IN'): `Text("...", font="Noto Sans Tamil")`
+        *   For Japanese ('ja-JP'): `Text("...", font="Noto Sans JP")`
+        *   For Chinese ('zh-CN'): `Text("...", font="Noto Sans SC")`
+        *   For other non-Latin scripts, try a general Unicode font like `font="Noto Sans"` or `font="Arial Unicode MS"`.
+    *   Do **NOT** add the `font` parameter for English text unless a specific style is needed.
+    *   Keep Manim function names, variable names, mathematical formulas (e.g., `a^2+b^2=c^2` within `MathTex`), and non-translatable technical terms in **English**.
+5.  **LaTeX Handling:** Be very careful with LaTeX in `MathTex` and `Tex`. Use raw strings (r"...") or double backslashes (\\) for escaping where needed. Ensure correct math syntax. Use `\text{{...}}` for any text in {language} within `MathTex` (LaTeX handles fonts separately).
+6.  **Positioning & Clarity:** Position elements thoughtfully within the 16:9 frame using `.to_edge()`, `.shift()`, `.next_to()`, `.arrange()` etc. Avoid overlaps. Ensure text is readable.
+7.  **Animation Logic:** Use Manim objects (`MathTex`, `Text`, Shapes, etc.) and animations (`self.play`, `Create`, `Write`, `Transform`, etc.). **Crucially, ensure `self.add(object)` is called before animating it with `self.play(Transform(object, ...))` or `self.play(FadeOut(object))` if it wasn't already added via `Create` or `Write`.**
+8.  **Wait Times:** Use `self.wait(...)` appropriately between logical steps and scenes to control pacing.
+9.  **Self-Contained & Runnable:** The script must run without errors.
+10. **CODE ONLY OUTPUT:** Your *entire response* must be **ONLY** the raw Python code for the complete script. **DO NOT** include *any* explanations, comments outside the code, greetings, summaries, or markdown fences.
 
-Generate the single-class script now, paying close attention to LaTeX, positioning, and animation logic."""
+Generate the single-class script now in **{language}** (except for code/math terms), paying close attention to LaTeX, positioning, and animation logic."""
         # Reset both counters for initial generation
         next_render_iter = 0
         next_eval_iter = 0

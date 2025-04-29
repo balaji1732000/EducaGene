@@ -4,6 +4,7 @@ from typing import List, Dict, Any, Optional, Literal
 @dataclass
 class WorkflowState:
     user_concept: str
+    language: str = "en-US" # Target language code (e.g., "en-US", "es-ES")
     request_id: Optional[str] = None
     estimated_duration: float = 0.0 # Estimated duration based on generated script
     temp_dir: Optional[str] = None

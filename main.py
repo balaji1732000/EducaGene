@@ -263,10 +263,11 @@ def index():
 def generate_langraph():
     data = request.get_json(force=True)
     concept = sanitize_input(data.get('concept', ''))
+    language = data.get('language', 'en-US') # Default to English if not provided
     if not concept:
         return jsonify({'error': 'Missing "concept"'}), 400
-    # Initialize dataclass state
-    state = WorkflowState(user_concept=concept)
+    # Initialize dataclass state, including language
+    state = WorkflowState(user_concept=concept, language=language)
     app.logger.info(f"Invoking graph with initial state: {state}")
     try:
         final_state = None

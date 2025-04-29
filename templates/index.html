@@ -20,23 +20,113 @@
 
     <!-- Bottom controls -->
     <div class="flex items-center justify-between bg-white border-2 border-t-0 border-purple-400 rounded-b-lg px-4 py-3">
-      <button 
-        id="inspire"
-        class="flex items-center text-gray-700 hover:text-gray-900">
-        <!-- small cube icon -->
-        <svg class="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
-          <path d="M2 5.5v9L10 19l8-4.5v-9L10 1 2 5.5zM10 3.18l6 3.37v6.91l-6 3.37-6-3.37V6.55l6-3.37z"/>
-          <path d="M9 13.41V6.59l-5-2.8v6.62l5 2.8zm2 0l5-2.8V3.79l-5 2.8v6.82z"/>
-        </svg>
-      </button>
-
+      <!-- Language Selection Dropdown (Moved Left) -->
       <div class="flex items-center">
-        <span class="text-gray-500 mr-2">Enhance script</span>
-        <label class="switch">
-          <input type="checkbox" id="enhanceToggle">
-          <span class="slider"></span>
-        </label>
+          <label for="languageSelect" class="text-sm text-gray-500 mr-1">Language:</label>
+          <select id="languageSelect" name="language" aria-label="Select video language" class="text-sm text-black border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-secondary">
+            <option value="af-ZA">Afrikaans (South Africa)</option>
+            <option value="am-ET">Amharic (Ethiopia)</option>
+            <option value="ar-EG">Arabic (Egypt)</option>
+            <option value="ar-SA">Arabic (Saudi Arabia)</option>
+            <option value="az-AZ">Azerbaijani (Azerbaijan)</option>
+            <option value="bg-BG">Bulgarian (Bulgaria)</option>
+            <option value="bn-BD">Bangla (Bangladesh)</option>
+            <option value="bn-IN">Bengali (India)</option>
+            <option value="bs-BA">Bosnian (Bosnia and Herzegovina)</option>
+            <option value="ca-ES">Catalan (Spain)</option>
+            <option value="cs-CZ">Czech (Czech)</option>
+            <option value="cy-GB">Welsh (United Kingdom)</option>
+            <option value="da-DK">Danish (Denmark)</option>
+            <option value="de-AT">German (Austria)</option>
+            <option value="de-CH">German (Switzerland)</option>
+            <option value="de-DE">German (Germany)</option>
+            <option value="el-GR">Greek (Greece)</option>
+            <option value="en-AU">English (Australia)</option>
+            <option value="en-CA">English (Canada)</option>
+            <option value="en-GB">English (United Kingdom)</option>
+            <option value="en-IE">English (Ireland)</option>
+            <option value="en-IN">English (India)</option>
+            <option value="en-US" selected>English (United States)</option>
+            <option value="es-ES">Spanish (Spain)</option>
+            <option value="es-MX">Spanish (Mexico)</option>
+            <option value="et-EE">Estonian (Estonia)</option>
+            <option value="eu-ES">Basque (Spain)</option>
+            <option value="fa-IR">Persian (Iran)</option>
+            <option value="fi-FI">Finnish (Finland)</option>
+            <option value="fil-PH">Filipino (Philippines)</option>
+            <option value="fr-BE">French (Belgium)</option>
+            <option value="fr-CA">French (Canada)</option>
+            <option value="fr-CH">French (Switzerland)</option>
+            <option value="fr-FR">French (France)</option>
+            <option value="ga-IE">Irish (Ireland)</option>
+            <option value="gl-ES">Galician (Spain)</option>
+            <option value="he-IL">Hebrew (Israel)</option>
+            <option value="hi-IN">Hindi (India)</option>
+            <option value="hr-HR">Croatian (Croatia)</option>
+            <option value="hu-HU">Hungarian (Hungary)</option>
+            <option value="hy-AM">Armenian (Armenia)</option>
+            <option value="id-ID">Indonesian (Indonesia)</option>
+            <option value="is-IS">Icelandic (Iceland)</option>
+            <option value="it-IT">Italian (Italy)</option>
+            <option value="ja-JP">Japanese (Japan)</option>
+            <option value="jv-ID">Javanese (Indonesia)</option>
+            <option value="ka-GE">Georgian (Georgia)</option>
+            <option value="kk-KZ">Kazakh (Kazakhstan)</option>
+            <option value="km-KH">Khmer (Cambodia)</option>
+            <option value="kn-IN">Kannada (India)</option>
+            <option value="ko-KR">Korean (Korea)</option>
+            <option value="lo-LA">Lao (Laos)</option>
+            <option value="lt-LT">Lithuanian (Lithuania)</option>
+            <option value="lv-LV">Latvian (Latvia)</option>
+            <option value="mk-MK">Macedonian (North Macedonia)</option>
+            <option value="ml-IN">Malayalam (India)</option>
+            <option value="mn-MN">Mongolian (Mongolia)</option>
+            <option value="ms-MY">Malay (Malaysia)</option>
+            <option value="mt-MT">Maltese (Malta)</option>
+            <option value="my-MM">Burmese (Myanmar)</option>
+            <option value="nb-NO">Norwegian (Bokmål, Norway)</option>
+            <option value="ne-NP">Nepali (Nepal)</option>
+            <option value="nl-BE">Dutch (Belgium)</option>
+            <option value="nl-NL">Dutch (Netherlands)</option>
+            <option value="pl-PL">Polish (Poland)</option>
+            <option value="ps-AF">Pashto (Afghanistan)</option>
+            <option value="pt-BR">Portuguese (Brazil)</option>
+            <option value="pt-PT">Portuguese (Portugal)</option>
+            <option value="ro-RO">Romanian (Romania)</option>
+            <option value="ru-RU">Russian (Russia)</option>
+            <option value="si-LK">Sinhala (Sri Lanka)</option>
+            <option value="sk-SK">Slovak (Slovakia)</option>
+            <option value="sl-SI">Slovenian (Slovenia)</option>
+            <option value="so-SO">Somali (Somalia)</option>
+            <option value="sq-AL">Albanian (Albania)</option>
+            <option value="sr-RS">Serbian (Serbia)</option>
+            <option value="su-ID">Sundanese (Indonesia)</option>
+            <option value="sv-SE">Swedish (Sweden)</option>
+            <option value="sw-KE">Swahili (Kenya)</option>
+            <option value="ta-IN">Tamil (India)</option>
+            <option value="te-IN">Telugu (India)</option>
+            <option value="th-TH">Thai (Thailand)</option>
+            <option value="tr-TR">Turkish (Türkiye)</option>
+            <option value="uk-UA">Ukrainian (Ukraine)</option>
+            <option value="ur-PK">Urdu (Pakistan)</option>
+            <option value="uz-UZ">Uzbek (Uzbekistan)</option>
+            <option value="vi-VN">Vietnamese (Vietnam)</option>
+            <option value="zh-CN">Chinese (Mandarin, Simplified)</option>
+            <option value="zh-HK">Chinese (Cantonese, Traditional)</option>
+            <option value="zh-TW">Chinese (Taiwanese Mandarin)</option>
+            <option value="zu-ZA">Zulu (South Africa)</option>
+          </select>
       </div>
+
+       <!-- Enhance Script Toggle (Moved Right) -->
+       <div class="flex items-center">
+         <span class="text-gray-500 mr-2">Enhance script</span>
+         <label class="switch">
+           <input type="checkbox" id="enhanceToggle">
+           <span class="slider"></span>
+         </label>
+       </div>
+       <!-- Removed Inspire Button -->
     </div>
 
     <!-- Next button -->
@@ -76,7 +166,12 @@ window.addEventListener('DOMContentLoaded', () => {
 
   nextBtn.addEventListener('click', async (e) => {
     e.preventDefault();
-    const concept = document.getElementById('concept')?.value.trim() || '';
+    const conceptEl = document.getElementById('concept');
+    const languageSelectEl = document.getElementById('languageSelect');
+
+    const concept = conceptEl?.value.trim() || '';
+    const language = languageSelectEl?.value || 'en-US'; // Default to en-US if element not found
+
     if (!concept) {
       return alert('Please enter a concept to visualize.');
     }
@@ -91,7 +186,7 @@ window.addEventListener('DOMContentLoaded', () => {
       const res = await fetch('/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ concept }),
+        body: JSON.stringify({ concept, language }), // Include language in the request body
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || `Status ${res.status}`);
@@ -146,23 +241,6 @@ function setExample(text) {
     document.getElementById('downloadVideo').classList.add('hidden');
 }
 
-const copyCodeBtn = document.getElementById('copyCode');
-copyCodeBtn.addEventListener('click', function() {
-    const codeToCopy = document.getElementById('generatedCode').textContent;
-    if (codeToCopy && codeToCopy !== '# Your generated code will appear here' && codeToCopy !== '# Final script code not available.') {
-        navigator.clipboard.writeText(codeToCopy).then(() => {
-            const originalText = this.innerHTML;
-            this.innerHTML = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg><span>Copied!</span>';
-            setTimeout(() => {
-                this.innerHTML = originalText;
-            }, 2000);
-        }).catch(err => {
-            console.error('Failed to copy code: ', err);
-            alert('Failed to copy code to clipboard.');
-        });
-    } else {
-        console.warn('No code available to copy.');
-    }
-});
+// Removed event listener for non-existent copyCodeBtn and generatedCode elements
 </script>
 {% endblock %}

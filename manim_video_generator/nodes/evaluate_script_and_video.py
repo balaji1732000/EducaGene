@@ -94,6 +94,7 @@ Examine the video frame by frame alongside the script. Identify significant issu
 4.  **Potential Code Errors (Visual Clues):** Does the video show signs of common Manim errors?
     *   *LaTeX Errors:* Look for garbled text/equations (often appears as "[Tex Error]"). If seen, suggest checking LaTeX syntax in the script.
     *   *Positioning Errors:* Elements appearing off-screen or crammed together. Suggest using `.shift`, `.next_to`, `.arrange`.
+    *   **Font/Unicode Errors:** Pay close attention to any text generated using `Text(...)`. If the video shows empty boxes ('tofu', □□□) instead of characters (especially for non-English languages like Hindi, Tamil, etc.), this indicates a missing or incorrect `font` parameter in the corresponding `Text(...)` object in the script. Flag this and suggest adding an appropriate `font="..."` parameter (e.g., `font="Noto Sans Devanagari"` for Hindi).
 
 **Output Format:**
 - Provide concise, actionable feedback ONLY if significant issues requiring code changes are found. Focus on what needs fixing in the code based on the visual evidence.
