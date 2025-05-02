@@ -28,7 +28,7 @@ def generate_final_script_node(state: WorkflowState) -> Dict[str, Any]:
         'response_mime_type': 'text/plain',
     }
     model = genai.GenerativeModel(
-        model_name='gemini-2.5-pro-preview-03-25',
+        model_name='gemini-2.5-flash-preview-04-17',
         generation_config=generation_config,
     )
     chat_session = model.start_chat(history=[{'role': 'user', 'parts': [video_file]}])

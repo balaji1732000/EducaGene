@@ -23,10 +23,11 @@ class WorkflowState:
     code_eval_verdict: Optional[Literal['SATISFIED', 'REVISION_NEEDED']] = None # Set by evaluation node
     # Separate iteration counters and limits
     render_error_iteration: int = 0
-    max_render_error_revisions: int = 3 # Max retries for render errors
+    max_render_error_revisions: int = 6 # Max retries for render errors
     evaluation_revision_iteration: int = 0
     max_evaluation_revisions: int = 3 # Max retries for evaluation feedback (Increased to 3)
     current_code: Optional[str] = None
     full_script_path: Optional[str] = None
     all_scene_class_names: List[str] = field(default_factory=list)
     evaluation_feedback: Optional[str] = None # Consolidated feedback (from code OR combined code/video eval)
+    error_search_context: Optional[str] = None # Context from web search for render errors

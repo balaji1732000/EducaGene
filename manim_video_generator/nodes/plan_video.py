@@ -23,7 +23,7 @@ def plan_video_node(state: WorkflowState) -> Dict[str, Any]:
 2.  **Duration/Scene Count:** Analyze the user's concept '{concept}'.
     *   If the concept implies a specific duration (e.g., "short video", "2-minute explanation"), create a plan with a number of scenes appropriate for that length (estimate ~5-10 seconds per scene).
     *   If no duration is implied, create a detailed plan with enough scenes to cover the topic thoroughly. For complex topics, aim for significant depth (e.g., ~30 scenes as a guideline, but adjust based on the actual content).
-2.  **Dimensionality:** Determine if the concept requires 3D (`ThreeDScene`) or 2D (`Scene`) visualization. If 3D is needed (e.g., for visualizing volumes, 3D graphs, certain physics concepts), mention relevant 3D objects (like `Sphere`, `Cube`, `ThreeDAxes`) and the need for `ThreeDScene` in the descriptions. Default to 2D (`Scene`) if unsure or if 2D is sufficient.
+2.  **Dimensionality (Strict):** Carefully determine if the concept **inherently requires 3D visualization** (`ThreeDScene`). Examples include plotting 3D surfaces, vector fields, complex spatial relationships. **If 2D (`Scene`) is sufficient, strongly prefer 2D.** If recommending 3D, **explicitly state why** it's necessary for that specific scene (e.g., "Requires 3D to show the surface plot"). Mention relevant 3D objects (`Sphere`, `Cube`, `ThreeDAxes`, `ParametricSurface`) only if 3D is truly needed.
 
 **Scene Breakdown:**
 Break the concept down into a logical sequence of distinct scenes based on the duration/complexity analysis above.
@@ -32,8 +32,8 @@ For each scene:
 - Provide a detailed 'description' outlining:
     - The key idea or sub-topic this scene addresses.
     - A step-by-step guide of the visual elements to show and animate (mention 2D or 3D objects as appropriate).
-    - Mention specific Manim objects/methods (in English) that might be useful (e.g., `Text`, `MathTex`, `Square`, `Circle`, `Create`, `Transform`, `FadeIn`, `Rotate`, `ThreeDAxes`, `Surface`).
-    - If 3D is needed for this scene, explicitly state it (e.g., "Requires 3D visualization using ThreeDScene").
+    - Mention specific Manim objects/methods (in English) that might be useful (e.g., `Text`, `MathTex`, `Square`, `Circle`, `Create`, `Transform`, `FadeIn`, `Rotate`). Only mention 3D objects (`ThreeDAxes`, `Surface`, `Sphere`) if 3D is deemed necessary for this scene.
+    - If 3D is recommended, state: "Requires `ThreeDScene`. Reason: [briefly explain why 3D is needed]".
     - The main takeaway point or connection to the next scene (in {language}).
 
 **Output Format:**

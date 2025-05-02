@@ -1,12 +1,15 @@
 import os
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Literal as PyLiteral
 import google.generativeai as genai
 import traceback
+import json
+# Removed Pydantic imports
 
 from manim_video_generator.config import app
 from manim_video_generator.state import WorkflowState
 from manim_video_generator.utils import upload_to_gemini, wait_for_files_active
-# Removed incorrect import: from manim_video_generator.llm_client import get_gemini_client
+
+# Removed Pydantic model definition
 
 # Configure Gemini API Key
 try:
@@ -23,10 +26,9 @@ def evaluate_script_and_video_node(state: WorkflowState) -> Dict[str, Any]:
     """
     Analyzes the rendered silent video alongside its source code using Gemini Vision.
     Identifies visual issues (overlaps, clarity, timing) AND potential code errors (LaTeX).
-    Provides consolidated feedback and a verdict for potential code revision.
+    Provides consolidated feedback and a verdict for potential code revision via JSON.
     """
     app.logger.info("--- evaluate_script_and_video ---")
-    # Corrected to use the state field set by the rendering node
     video_path = state.video_path
     script_code = state.current_code
     feedback = None
@@ -35,20 +37,17 @@ def evaluate_script_and_video_node(state: WorkflowState) -> Dict[str, Any]:
     # Basic checks
     if not gemini_api_key:
         app.logger.warning("Skipping combined evaluation as GEMINI_API_KEY is not configured.")
-        # Return satisfied to proceed without evaluation
         return {"evaluation_feedback": None, "code_eval_verdict": "SATISFIED"}
 
     if not video_path or not os.path.exists(video_path):
         app.logger.error(f"Video path '{video_path}' not found. Skipping combined evaluation.")
-        # Return satisfied as we cannot evaluate
         return {"evaluation_feedback": None, "code_eval_verdict": "SATISFIED", "error_message": "Silent video path missing for evaluation."}
 
     if not script_code:
         app.logger.error("Script code missing. Skipping combined evaluation.")
-         # Return satisfied as we cannot evaluate
         return {"evaluation_feedback": None, "code_eval_verdict": "SATISFIED", "error_message": "Script code missing for evaluation."}
 
-    video_file = None # Initialize video_file to ensure it exists for finally block
+    video_file = None
     try:
         app.logger.info(f"Uploading video '{video_path}' to Gemini for combined evaluation...")
         video_file = upload_to_gemini(video_path, mime_type="video/mp4")
@@ -56,20 +55,53 @@ def evaluate_script_and_video_node(state: WorkflowState) -> Dict[str, Any]:
         wait_for_files_active([video_file])
         app.logger.info("Video file active. Proceeding with Gemini Vision analysis.")
 
-        # Initialize Gemini model directly, similar to generate_final_script_node
-        # Assuming a vision-capable model is needed. Adjust model_name if necessary.
-        # Using gemini-1.5-flash as a potentially faster/cheaper vision option
+        # Define the detailed system instruction requesting structured JSON output with scene-based feedback
+        # Added stricter checks for transitions and pacing
+        system_instruction = """You are a meticulous Manim Quality Assurance expert. Evaluate the provided script and video based on the user prompt's context.
+
+Strict Evaluation Checklist (Apply per scene where relevant):
+1.  **Plan Adherence:** Does the video visually execute the steps described in the Video Plan? Note deviations/omissions.
+2.  **Visual Clarity & Readability:** Is text readable (size, contrast, position)? Are diagrams clear? Check for Font/Unicode Errors (□□□) indicating missing `font` parameters in `Text()`.
+3.  **Layout, Overlaps & Framing:** Are elements within 16:9 frame? Is there clutter or confusing overlap? **[Critical]** Overlaps or elements outside frame are critical issues.
+4.  **Scene Transitions [STRICT]:** Are elements from the previous logical scene block properly removed (e.g., via `FadeOut`) before the next scene begins? Flag lingering elements as **[Critical]**.
+5.  **Animation Quality & Pacing [STRICT]:** Are animations smooth? Does the overall pacing feel too rushed? Are `run_time` values appropriate (generally >= 1s)? Are there sufficient `wait()` calls (e.g., `wait(1)`) between distinct steps/scenes? Flag rushed pacing as **[Major]**.
+6.  **Code-Visual Consistency:** Does the visual output match the script's intent?
+7.  **3D Usage Appropriateness:** Was `ThreeDScene` used only when necessary according to the plan?
+8.  **3D Camera Angle:** If `ThreeDScene` is used, is the camera angle effective and readable?
+
+Output Requirements:
+*   Your entire response **MUST** be a single, valid JSON object: `{ "verdict": "...", "feedback": "..." }`
+*   "verdict" **MUST** be either "SATISFIED" or "REVISION_NEEDED".
+*   "feedback" **MUST** be a string.
+    *   If issues are found (verdict is "REVISION_NEEDED"), format the feedback string as follows:
+        - For each scene number where issues occur:
+          - Start with "Scene [Number]: [Scene Title from Plan]"
+          - Optionally, include the relevant code snippet: "Relevant Code:\n```python\n...\n```"
+          - List numbered issues found in that scene:
+            - Start each issue with severity: `[Critical]` (for overlaps, out-of-frame, lingering elements), `[Major]` (for readability, pacing, significant plan deviation), or `[Minor]` (for small aesthetic issues).
+            - Describe the issue clearly in the target language provided in the user prompt context.
+            - Suggest a specific fix (e.g., "Adjust position using .shift()", "Add font='...'","Add self.play(FadeOut(...)) before this scene", "Increase run_time/add wait()").
+        - Separate scenes with a double newline (`\\n\\n`).
+    *   If no issues are found (verdict is "SATISFIED"), the "feedback" string **MUST** be empty (`""`).
+
+Example Feedback String (Issues Found):
+"Scene 2: Scatter Plot\\nRelevant Code:\\n```python\\nself.play(Write(title))\\nself.play(Create(dots))\\n```\\n1. [Critical] Title text overlaps with dots. Suggest using `FadeOut(title)` before creating dots.\\n\\nScene 5: Cost Function\\n1. [Major] Animation of formula writing is too fast (run_time=0.5). Suggest increasing run_time to 1.5.\\n2. [Critical] Elements from Scene 4 are still visible. Add `self.play(FadeOut(scene4_elements))` before Scene 5 starts."
+
+Focus *only* on visual quality, clarity, pacing, 3D usage, and plan adherence. Do not evaluate educational content or runtime errors. Ensure the output is valid JSON and feedback text is in the target language."""
+
         generation_config = {
-            "temperature": 0.7, # Slightly lower temp for more deterministic evaluation
+            "temperature": 0.7,
             "top_p": 0.95,
             "top_k": 64,
-            "max_output_tokens": 65000, # Allow for detailed feedback if needed
-            "response_mime_type": "text/plain",
+            "max_output_tokens": 65000,
+            "response_mime_type": "application/json", # Request JSON MIME type
+            # Removed response_schema
         }
+
         model = genai.GenerativeModel(
-            model_name="gemini-2.5-flash-preview-04-17", # Or gemini-pro-vision if flash is unavailable/unsuitable
+            model_name="gemini-2.5-flash-preview-04-17", # Using flash
             generation_config=generation_config,
-            # safety_settings adjusted to allow potentially discussing "errors" if needed
+            system_instruction=system_instruction,
             safety_settings=[
                 {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
                 {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
@@ -78,90 +110,81 @@ def evaluate_script_and_video_node(state: WorkflowState) -> Dict[str, Any]:
             ]
         )
 
-        # Define the main part of the prompt using an f-string
-        prompt_main = f"""Analyze the provided Manim Python script AND the corresponding rendered video.
+        # Simplified User Prompt providing context
+        video_plan_str = json.dumps(state.video_plan, indent=2) if state.video_plan else "Plan not available."
+        user_concept = state.user_concept
+        language = state.language # Language needed for feedback text
+        prompt = f"""Evaluate the script and video based on the following context. Follow the instructions provided in the system prompt precisely, providing feedback text in **{language}**.
 
-**Manim Script:**
+**Context:**
+*   **User Concept:** {user_concept}
+*   **Target Language:** {language}
+*   **Video Plan:**
+```json
+{video_plan_str}
+```
+*   **Generated Manim Script:**
 ```python
 {script_code}
 ```
-
-**Video Analysis Task:**
-Examine the video frame by frame alongside the script. Identify significant issues that require code revision, focusing on:
-1.  **Visual Clarity & Overlaps:** Are elements (text, shapes) overlapping badly? Is text readable? Are diagrams clear? Describe specific instances.
-2.  **Timing/Pacing:** Does anything appear too quickly/slowly compared to reasonable expectations for the code's animations (`self.play`, `self.wait`)?
-3.  **Code-Visual Mismatch:** Does the visual output seem inconsistent with what the code *intended* to do? (e.g., an object animated before being added, wrong transformations).
-4.  **Potential Code Errors (Visual Clues):** Does the video show signs of common Manim errors?
-    *   *LaTeX Errors:* Look for garbled text/equations (often appears as "[Tex Error]"). If seen, suggest checking LaTeX syntax in the script.
-    *   *Positioning Errors:* Elements appearing off-screen or crammed together. Suggest using `.shift`, `.next_to`, `.arrange`.
-    *   **Font/Unicode Errors:** Pay close attention to any text generated using `Text(...)`. If the video shows empty boxes ('tofu', □□□) instead of characters (especially for non-English languages like Hindi, Tamil, etc.), this indicates a missing or incorrect `font` parameter in the corresponding `Text(...)` object in the script. Flag this and suggest adding an appropriate `font="..."` parameter (e.g., `font="Noto Sans Devanagari"` for Hindi).
-
-**Output Format:**
-- Provide concise, actionable feedback ONLY if significant issues requiring code changes are found. Focus on what needs fixing in the code based on the visual evidence.
-- **Crucially, if providing feedback for revision, include the relevant code snippet from the Manim script where the issue occurs.**
-- If NO significant issues are found in the video or suggested by the code, respond with the single word: SATISFIED
-- If issues ARE found, provide the feedback (including the code snippet) and conclude with the single word: REVISION_NEEDED
-"""
-
-        # Define the example part as a regular string to avoid f-string issues with braces
-        prompt_examples = """
-Example Feedback (if issues found):
-"Text overlaps the diagram in Scene 2 around the 15s mark. Adjust positioning using .next_to().
-Relevant Code Snippet:
-```python
-text = Text(...)
-diagram = ...
-self.play(Write(text), Create(diagram)) # Potential overlap here
-```
-Potential LaTeX error in Scene 1's title.
-Relevant Code Snippet:
-```python
-title = MathTex(r"Title with {{invalid syntax}}")
-self.play(Write(title))
-```
-REVISION_NEEDED"
-
-Example Response (if no issues):
-"SATISFIED"
-"""
-        # Combine the parts
-        prompt = prompt_main + prompt_examples
+*   **Rendered Video:** (Provided as input)"""
 
         app.logger.info("Sending combined script/video analysis request to Gemini...")
         response = model.generate_content([prompt, video_file])
-        response_text = response.text.strip()
-        app.logger.info(f"Gemini combined evaluation response: {response_text}")
 
-        # Parse verdict and feedback
-        if response_text.endswith("REVISION_NEEDED"):
-            verdict = "REVISION_NEEDED"
-            # Extract feedback part (everything before the last line)
-            feedback_lines = response_text.splitlines()
-            if len(feedback_lines) > 1:
-                 feedback = "\n".join(feedback_lines[:-1]).strip()
-            else: # Only verdict line was returned
-                 feedback = "Revision needed, but specific feedback was not provided by the model."
-            app.logger.info(f"Combined evaluation requires revision. Feedback: {feedback}")
-        elif response_text == "SATISFIED":
-            verdict = "SATISFIED"
+        try:
+            # Parse the raw text response as JSON
+            response_text = response.text.strip()
+            # Clean potential markdown fences just in case
+            if response_text.startswith("```json"):
+                response_text = response_text[7:]
+            if response_text.endswith("```"):
+                response_text = response_text[:-3]
+            response_text = response_text.strip()
+
+            app.logger.info(f"Raw Gemini evaluation response: {response_text}")
+            eval_result = json.loads(response_text) # Use standard json.loads
+
+            verdict = eval_result.get("verdict")
+            feedback_str = eval_result.get("feedback") # Get feedback string
+
+            # Validate verdict
+            if verdict not in ["SATISFIED", "REVISION_NEEDED"]:
+                raise ValueError(f"Invalid verdict value received: {verdict}")
+
+            # Process feedback based on verdict
+            if verdict == "REVISION_NEEDED":
+                if not feedback_str: # Check if feedback string is empty or None
+                    feedback = "Revision needed, but specific feedback was not provided in JSON."
+                    app.logger.warning(feedback)
+                else:
+                    feedback = feedback_str # Assign the non-empty string
+            elif verdict == "SATISFIED":
+                feedback = None # Explicitly set to None if satisfied
+
+            app.logger.info(f"Parsed evaluation verdict: {verdict}")
+            if feedback:
+                app.logger.info(f"Parsed evaluation feedback (structured string): {feedback}")
+
+        except (json.JSONDecodeError, ValueError, TypeError, AttributeError) as parse_e:
+            # Handle errors during JSON parsing or validation
+            err_msg = f"Failed to parse evaluation JSON response or invalid structure: {parse_e}. Raw response: {response.text if hasattr(response, 'text') else 'N/A'}"
+            app.logger.error(err_msg)
+            verdict = "REVISION_NEEDED" # Default to revision needed on parse error
+            feedback = f"Failed to parse evaluation response. Raw response: {response.text if hasattr(response, 'text') else 'N/A'}"
+
+        # Ensure feedback is None if verdict is SATISFIED, even if LLM provided some text
+        if verdict == "SATISFIED":
             feedback = None
-            app.logger.info("Combined evaluation satisfied.")
-        else:
-            # Unexpected response format, assume revision needed and use full response as feedback
-            verdict = "REVISION_NEEDED"
-            feedback = f"Unexpected response format from evaluation model: {response_text}"
-            app.logger.warning(feedback)
-
 
         return {"evaluation_feedback": feedback, "code_eval_verdict": verdict, "error_message": None}
 
     except Exception as e:
         err_msg = f"Error during combined script/video evaluation: {e}\n{traceback.format_exc()}"
         app.logger.error(err_msg)
-        # Default to SATISFIED on error to avoid infinite loops if Gemini fails repeatedly
+        # Default to SATISFIED on other errors to avoid loops
         return {"evaluation_feedback": None, "code_eval_verdict": "SATISFIED", "error_message": err_msg}
     finally:
-        # Ensure the uploaded file is deleted from Gemini
         if video_file:
             try:
                 genai.delete_file(video_file.name)
