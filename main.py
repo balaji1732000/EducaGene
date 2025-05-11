@@ -1,40 +1,15 @@
 import os
-import sys
 import logging
-import subprocess
-import shutil
-import uuid
 import json
-import time
-import traceback
 from datetime import datetime
-from typing import TypedDict, List, Dict, Any, Optional, Literal
-import shutil  # Added missing import for subprocess utilities
-import re
-from logging import FileHandler
+from typing import Any
+import json
 import os
 import sys
 import logging
-import subprocess
 import shutil
-import uuid
 import json
-import time
-import traceback
-from datetime import datetime
-from typing import TypedDict, List, Dict, Any, Optional, Literal
-import shutil  # Added missing import for subprocess utilities
-import re
-from logging import FileHandler
-import os
-import sys
-import logging
-import subprocess
-import shutil
-import uuid
-import json
-import time
-import traceback
+from IPython.display import Image, display
 from datetime import datetime
 from typing import TypedDict, List, Dict, Any, Optional, Literal
 import shutil  # Added missing import for subprocess utilities
@@ -85,13 +60,8 @@ def clean_code_string(code: str) -> str:
     return code
 
 # --- Structured imports ---
-from manim_video_generator.config import * 
-from manim_video_generator.utils import sanitize_input, clean_code_string, fix_inline_latex, estimate_scene_time, upload_to_gemini, wait_for_files_active
-from manim_video_generator.llm_client import get_llm_client
-from manim_video_generator.state import WorkflowState
-# --- Structured imports ---
 from manim_video_generator.config import * # Assuming this sets up logging, paths etc.
-from manim_video_generator.utils import sanitize_input # Keep specific utils if needed elsewhere
+from manim_video_generator.utils import * # Keep specific utils if needed elsewhere
 from manim_video_generator.state import WorkflowState
 from manim_video_generator.nodes import (
     setup_request_node,
@@ -105,97 +75,11 @@ from manim_video_generator.nodes import (
     combine_final_video_audio_node,
     should_retry_full_script,
     check_render_result,
+    search_for_solution_node, # Import the new node
 )
 
-# def upload_to_gemini(path: str, mime_type: Optional[str] = None) -> Any:
-#     """Uploads the given file to Gemini and returns the file object."""
-#     return genai.upload_file(path, mime_type=mime_type)
-
-# def wait_for_files_active(files: List[Any]) -> None:
-#     """Blocks until all uploaded files are processed and active in Gemini."""
-#     print("Waiting for file processing...")
-#     for file in files:
-#         f = genai.get_file(file.name)
-#         while f.state.name == "PROCESSING":
-#             time.sleep(10)
-#             f = genai.get_file(file.name)
-#         if f.state.name != "ACTIVE":
-#             raise Exception(f"File {f.name} failed to process")
-#     print("...all files ready")
-#     print()
-
-# # LLM client
-# def get_llm_client() -> AzureChatOpenAI:
-#     return AzureChatOpenAI(
-#         azure_endpoint=os.getenv('ENDPOINT_URL'),
-#         api_key=os.getenv('AZURE_OPENAI_API_KEY'),
-#         api_version='2024-12-01-preview',
-#         azure_deployment="o3-mini-2",
-#         max_completion_tokens=100000,
-        
-#     )
-
-# # --- timing heuristic -------------------------------------------------
-# WAIT_RE = re.compile(r"\.wait\(\s*([0-9.]+)\s*\)")
-# PLAY_RE = re.compile(r"\.play\(")
-
-# def estimate_scene_time(code: str) -> float:
-#     """
-#     Very quick heuristic:
-#       • explicit .wait(x) => add x seconds
-#       • each .play(...)   => assume ~2 s of animation
-#     Good enough to keep narration in sync.
-#     """
-#     waits = [float(x) for x in WAIT_RE.findall(code)]
-#     plays = len(PLAY_RE.findall(code))
-#     return sum(waits) + plays * 2.0
 
 
-# # -----------------------------------------------------------------------
-# # helper – fix inline LaTeX that the LLM often produces
-# # -----------------------------------------------------------------------
-# _INLINE_DOLLARS = re.compile(r"(?<!\\)\\$([^$]+?)\\$")       # $...$  → \( ... \)
-# _DOUBLE_LBRACE  = re.compile(r"\\{\\{")                     # {{     → \\{
-# _DOUBLE_RBRACE  = re.compile(r"\\}\\}")                     # }}     → \\}
-
-# def fix_inline_latex(code: str) -> str:
-#     """
-#     Convert inline $...$ to \\( ... \\) so MathTex doesn't choke,
-#     and escape stray '{{' / '}}' that break LaTeX parsing.
-#     Call this once on the full script before saving.
-#     """
-#     code = _INLINE_DOLLARS.sub(lambda m: f"\\({m.group(1).strip()}\\)", code)
-#     code = _DOUBLE_LBRACE.sub(r"\\{", code)
-#     code = _DOUBLE_RBRACE.sub(r"\\}", code)
-#     return code
-
-
-
-# Workflow state definition
-class ManimWorkflowState(TypedDict):
-    user_concept: str
-    request_id: str
-    estimated_duration: float
-    temp_dir: str
-    video_plan: Optional[List[Dict[str, Any]]]
-    current_render_index: int
-    scene_class_name: Optional[str]
-    rendering_error: Optional[str]
-    video_path: Optional[str]
-    collected_final_scene_paths: List[str]
-    concatenated_silent_video_path: Optional[str]
-    voiceover_script: Optional[str]
-    audio_path: Optional[str]
-    final_video_path: Optional[str]
-    final_video_url: Optional[str]
-    error_message: Optional[str]
-    code_eval_verdict: Optional[Literal['SATISFIED', 'REVISION_NEEDED']]
-    script_revision_iteration: int
-    max_script_revisions: int
-    current_code: Optional[str]
-    full_script_path: Optional[str]
-    all_scene_class_names: List[str]
-    evaluation_feedback: Optional[str]
 
 # Build graph
 workflow = StateGraph(WorkflowState)
@@ -211,6 +95,7 @@ nodes_to_add = [
     ('generate_final_script', generate_final_script_node),
     ('generate_audio', generate_audio_node),
     ('combine_final_video_audio', combine_final_video_audio_node),
+    ('search_for_solution', search_for_solution_node), # Add the new node
 ]
 for name, fn in nodes_to_add:
     workflow.add_node(name, fn)
@@ -228,12 +113,15 @@ workflow.add_conditional_edges(
     {
         # If render succeeds, go to the new combined evaluation node
         'render_success': 'evaluate_script_and_video',
-        # If render fails but retries allowed, go back to generate script
-        'retry_script_generation_render_error': 'generate_full_script',
+        # If render fails but retries allowed, go to the NEW search node first
+        'retry_script_generation_render_error': 'search_for_solution',
         # If render fails and max retries hit, still try evaluation (node handles missing video)
         'render_failed_proceed': 'evaluate_script_and_video'
     }
 )
+
+# After searching for a solution, always go back to generate script
+workflow.add_edge('search_for_solution', 'generate_full_script')
 
 # After combined evaluation, check if revision is needed
 workflow.add_conditional_edges(
@@ -254,6 +142,30 @@ workflow.add_edge('combine_final_video_audio', END)
 
 # Compile graph
 manim_graph = workflow.compile()
+
+# Attempt to generate workflow diagram
+try:
+    output_path = "workflow.png"
+    # Try calling draw_mermaid_png() and writing the returned bytes
+    graph_viz = manim_graph.get_graph()
+    if hasattr(graph_viz, 'draw_mermaid_png'):
+        png_data = graph_viz.draw_mermaid_png() # Call without arguments
+        with open(output_path, "wb") as f:
+            f.write(png_data)
+        app.logger.info(f"LangGraph workflow diagram saved to {output_path} using draw_mermaid_png()")
+    elif hasattr(graph_viz, 'draw_png'): # Fallback to draw_png if draw_mermaid_png doesn't exist
+        graph_viz.draw_png(output_path) # Assumes draw_png takes path
+        app.logger.info(f"LangGraph workflow diagram saved to {output_path} using draw_png()")
+    else: # Fallback to the standard pygraphviz draw method
+        graph_viz.draw(output_path, format='png', prog='dot')
+        app.logger.info(f"LangGraph workflow diagram saved to {output_path} using graph_viz.draw()")
+except ImportError:
+    app.logger.warning("pygraphviz not found. Skipping workflow diagram generation. Install with: pip install pygraphviz")
+except AttributeError as ae:
+    app.logger.warning(f"Failed to generate workflow diagram due to AttributeError (e.g. method not found): {ae}. Ensure LangGraph and pygraphviz versions are compatible.")
+except Exception as e:
+    app.logger.warning(f"Failed to generate workflow diagram: {e}. Ensure Graphviz is installed and in PATH, and LangGraph/pygraphviz are correctly installed.")
+
 
 @app.route('/')
 def index():

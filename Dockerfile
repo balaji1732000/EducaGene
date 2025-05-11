@@ -63,4 +63,4 @@ EXPOSE 5001
 # - Use 1 worker initially (can be scaled later)
 # - Set a long timeout (6000s) for potentially long video generation requests
 # - Point to the Flask app instance (app) within the main module (main.py)
-CMD ["gunicorn", "--bind", "0.0.0.0:5001", "--workers", "1", "--timeout", "6000", "main:app"]
+CMD ["gunicorn", "--bind", "0.0.0.0:5001", "--workers", "4", "--timeout", "6000", "main:app"]

@@ -61,6 +61,9 @@ Do not include any text outside the main JSON structure."""
 
     prompt = f"""Analyze the following text and extract structured details for any specific error messages or tracebacks. Provide the result in the required JSON format.
 
+Code Snippet:
+
+
 Input Text:
 \"\"\"
 {stderr_text}
@@ -123,7 +126,10 @@ def render_combined_video_node(state: WorkflowState) -> Dict[str, Any]:
     os.makedirs(media_dir, exist_ok=True)
 
     cmd = [
-        shutil.which('manim') or 'manim', 'render', '-qm',
+        shutil.which('manim') or 'manim', 'render',
+        # '--renderer', 'opengl', # Added OpenGL renderer flag
+        
+        '-qm',
         '--format', 'mp4',
         '--verbosity', 'DEBUG', # Keep DEBUG to get full tracebacks in stderr
         '--media_dir', media_dir,

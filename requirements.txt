@@ -158,4 +158,10 @@ Werkzeug==2.0.1
 xxhash==3.5.0
 yarl==1.19.0
 zstandard==0.23.0
+azure-storage-blob # Added for Azure Blob Storage integration
 gunicorn # Added for serving the Flask app in Docker
+duckduckgo_search       # DuckDuckGo search bindings
+crawl4ai                # Crawl4AI web crawler
+playwright              # headless browser for Crawl4AI
+requests                # For HTTP requests in html_extractor.py
+beautifulsoup4          # For HTML parsing (bs4) in html_extractor.py

@@ -4,7 +4,7 @@ import json # Import json for parsing structured errors
 from typing import Dict, Any
 
 from manim_video_generator.config import app
-from manim_video_generator.utils import clean_code_string, fix_inline_latex, estimate_scene_time
+from manim_video_generator.utils import clean_code_string, fix_inline_latex
 from manim_video_generator.llm_client import get_llm_client
 from manim_video_generator.state import WorkflowState
 
@@ -16,6 +16,7 @@ def generate_full_script_node(state: WorkflowState) -> Dict[str, Any]:
     user_concept = state.user_concept
     language = state.language # Get target language
     render_error = state.rendering_error # This might be raw text OR a JSON string
+    error_search_context = state.error_search_context # Read using the correct state attribute name
     feedback = state.evaluation_feedback # Consolidated feedback
     # Read separate iteration counters
     render_iter = state.render_error_iteration
@@ -59,9 +60,64 @@ Description: {scene.get('description', 'N/A')}
     next_render_iter = render_iter
     next_eval_iter = eval_iter
 
+    helper_block_instruction = """Start every script with the helper block shown below; do not change or remove it.
+```python
+### >>> BEGIN STANDARD HELPERS (inserted by generator) >>>
+from manim import *
+# Ensure DEGREES and other constants are available if not directly from manim.*
+# For example, you might need: from manim.utils.constants import DEGREES, UP, DOWN, LEFT, RIGHT, ORIGIN
+
+def fade_out_all(scene):
+    \"\"\"Fade out everything currently on screen.\"\"\"
+    if scene.mobjects: # Check if there are mobjects to fade
+        scene.play(FadeOut(VGroup(*scene.mobjects)))
+
+def safe_arrange(*mobjects, direction=DOWN, buff=0.4, **kwargs):
+    \"\"\"Arrange objects evenly and keep them on‑frame.
+    Passes additional kwargs (like 'aligned_edge') to VGroup.arrange().
+    Default edge for to_edge is UP if direction is DOWN, and LEFT if direction is RIGHT.
+    \"\"\"
+    if not mobjects:
+        return VGroup() # Return an empty VGroup if no mobjects are provided
+
+    # Determine a sensible default edge for to_edge based on direction
+    # This is a simple heuristic and might need adjustment based on common use cases
+    default_edge = kwargs.pop('edge', None)
+    if default_edge is None:
+        if direction is DOWN or direction is UP:
+            default_edge = UP
+        elif direction is LEFT or direction is RIGHT:
+            default_edge = LEFT
+        else:
+            default_edge = ORIGIN # Fallback for other directions
+
+    arranged_group = VGroup(*mobjects).arrange(direction, buff=buff, **kwargs)
+    
+    # Check if the group has any mobjects before calling to_edge
+    if arranged_group.submobjects:
+        return arranged_group.to_edge(default_edge)
+    return arranged_group # Return as is if empty after arrange (e.g. all mobjects were None)
+
+### <<< END STANDARD HELPERS <<<
+```
+
+"""
+
+    hard_rules = """## HARD RULES – NO EXCEPTIONS
+A. START every logical scene (a block of animations fulfilling one part of the plan) by ensuring a clean slate. If a `cleanup` variable is true (assume `cleanup = True` at the start of `construct` unless the plan implies otherwise for a specific scene), fade out all existing mobjects:
+       if locals().get("cleanup", True): # Default to True
+           fade_out_all(self) # Use the provided helper
+B. PLACE mobjects using an arrangement helper to avoid overlaps and ensure they are on-screen. Prefer `safe_arrange()` if suitable, or use `VGroup(obj1, obj2).arrange(DIRECTION, buff=0.3).to_edge(EDGE)`.
+C.  NEVER add a new mobject that would significantly overlap with an existing mobject in the same visual space unless the previous one is explicitly part of a combined visual. If replacing, ensure the old one is removed or faded out first. (Visual check: `obj.get_center()` distance < 1 might indicate overlap).
+D.  Use `self.wait(max(len(str(text_mobject.text))/12, 1))` after displaying any significant `Text` or `MathTex` object to allow for reading time (approx. 12 chars/sec). Ensure `text_mobject.text` is used to get the string length. For `MathTex`, you might need to estimate based on complexity if `.text` attribute is not directly suitable.
+
+"""
+
     if mode == "Render Error Revision":
         # Enhanced prompt for Render Error Revision with specific guidance for ImportError/NameError
-        prompt = f"""The previous attempt to render the Manim script for **'{user_concept}'** failed with a runtime error. Your task is to meticulously analyze the provided error information (which might be structured JSON or raw text) and **fix the specific error** in the code.
+        prompt = f"""{helper_block_instruction}
+{hard_rules}
+The previous attempt to render the Manim script for **'{user_concept}'** failed with a runtime error. Your task is to meticulously analyze the provided error information (which might be structured JSON or raw text) and **fix the specific error** in the code.
 
 **Original Video Plan (for context only):**
 {full_plan_description}
@@ -71,25 +127,32 @@ Description: {scene.get('description', 'N/A')}
 {render_error}
 ```
 
+**Potentially Relevant Solution Hints from Web Search (Use these as clues):**
+```
+{error_search_context if error_search_context else 'No hints found.'}
+```
+
 **Previous Script Attempt (contains the error):**
 ```python
 {current_code}
 ```
 
-**VERY IMPORTANT DEBUGGING INSTRUCTIONS:**
-1. **Analyze Error:**
-   - **If the 'Rendering Error Information' looks like JSON:** Parse it. Focus on the `error_details` list. For each error object, use the `error_type`, `error_message`, `line_number`, and `context` to understand the root cause.
-   - **If it's raw text (traceback):** Read the traceback carefully. Identify the exact error type and the specific line number where it occurred in the 'Previous Script Attempt'.
-2. **Targeted Fix:** Based on your analysis (JSON or raw text), modify **only the necessary lines** in the 'Previous Script Attempt' to resolve the identified root cause(s).
-   - For `NameError`/`ImportError`/`ModuleNotFoundError`: Check spelling, ensure imports are correct. **Crucially, for common Manim classes (like `Circle`, `Square`, `Text`, `MathTex`, `ThreeDScene`, `Surface`, etc.), the import path often changes between Manim versions. STRONGLY PREFER importing directly from the main `manim` package first (e.g., `from manim import Surface`). Note that `ParametricSurface` might now be called `Surface` in recent versions.** Only try specific submodules (like `manim.mobject.three_d`) if the direct import fails or if you are certain it's correct for the specific Manim version (assume v0.18+).
-   - Check for Manim v0.18/v0.19 vs older version differences (e.g., `ShowCreation` is now `Create`).
-   - For `AttributeError`: Correct the attribute/method name or object type. Check the Manim documentation if unsure about available methods.
+**VERY IMPORTANT DEBUGGING INSTRUCTIONS (TARGETING Manim Community v0.19.0):**
+(Adhere to HARD RULES above first)
+1. **Analyze Error & Hints:**
+   - **Error Info:** If the 'Rendering Error Information' looks like JSON, parse it and focus on `error_details`. If it's raw text (traceback), identify the error type and line number.
+   - **Hints:** Review the 'Solution Hints' from the web search for potential causes or fixes related to the error. The hints might contain code snippets or explanations.
+2. **Targeted Fix:** Based on your analysis of the error and any relevant hints, modify **only the necessary lines** in the 'Previous Script Attempt' to resolve the identified root cause(s). **Prioritize fixes suggested by the hints if they seem relevant.**
+   - For `NameError`/`ImportError`/`ModuleNotFoundError`: Check spelling, ensure imports are correct. **Assume Manim Community v0.19.0 import style.** Prefer direct imports (`from manim import Surface`) over submodule imports unless certain. Check hints for specific import issues.
+   - Check for Manim v0.19 vs older version differences (e.g., `ShowCreation` is now `Create`). Use hints if available.
+   - For `AttributeError`: Correct the attribute/method name or object type based on the error and hints.
    - For `TypeError`/`ValueError`: Adjust arguments passed to functions/methods.
    - For LaTeX Errors: Fix the LaTeX string syntax/escaping (use raw strings `r"..."`).
    - For other errors: Apply the specific fix indicated by the error message and context.
-3. **Minimal Changes:** Do **not** rewrite large sections of code unless necessary to fix the specific error(s). Preserve the original structure.
-4. **Maintain Single Class Structure:** Ensure the script still has exactly **ONE class** (`Scene` or `ThreeDScene`) with all logic in `construct`, and all necessary imports at the top.
-5. **CODE ONLY OUTPUT:** Provide the full corrected Python script **with the error(s) fixed**, and nothing else. No explanations or extra text.
+3. **Handling `MathTex` Indexing:** When applying operations like `SurroundingRectangle` to parts of a `MathTex` object created with multiple strings (e.g., `MathTex("a", "+", "b")`), ensure you are indexing correctly to get a valid sub-mobject. `eq[0]` usually works for the first part, `eq[1]` for the second, etc. If surrounding multiple parts, group them explicitly: `VGroup(eq[0], eq[1])`. Incorrect indexing can cause `TypeError`.
+4. **Minimal Changes:** Do **not** rewrite large sections of code unless necessary to fix the specific error(s). Preserve the original structure.
+5. **Maintain Single Class Structure:** Ensure the script still has exactly **ONE class** (`Scene` or `ThreeDScene`) with all logic in `construct`, and all necessary imports at the top.
+6. **CODE ONLY OUTPUT:** Provide the full corrected Python script **with the error(s) fixed**, and nothing else. No explanations or extra text.
 
 Apply the fix(es) and output the corrected code now."""
         next_render_iter = render_iter + 1 # Increment render error counter
@@ -97,16 +160,18 @@ Apply the fix(es) and output the corrected code now."""
 
     elif mode == "Evaluation Revision":
         # Enhanced prompt for Evaluation Revision, focusing on visual fixes including 3D camera and transitions/pacing
-        prompt = f"""The Manim script for **'{user_concept}'** rendered successfully, but the resulting video has some **visual issues** noted in the evaluation. **Revise the script** to address these issues without altering the intended content.
+        prompt = f"""{helper_block_instruction}
+{hard_rules}
+The Manim script for **'{user_concept}'** rendered successfully, but the resulting video has some **visual issues** noted in the evaluation. **Revise the script** to address these issues without altering the intended content.
 
 **Original Video Plan (for reference to maintain intent):**
 {full_plan_description}
 
-**Evaluation Feedback (problems to fix in the video):**
+**Structured Evaluation Feedback (List of issues to fix in the video):**
+```json
+{json.dumps(feedback, indent=2)}
 ```
-{feedback}
-```
-*(The feedback above describes what looked wrong in the video — e.g. overlapping text, elements off-screen, pacing too fast, lingering elements from previous scenes, or 3D view issues — possibly with pointers to segments of code.)*
+*(The JSON above provides a list of issues. Each issue has a 'scene_number', 'scene_title', 'type', 'severity', 'description', and a 'suggestion'. Focus on addressing each issue based on its details, particularly the 'description' and 'suggestion'.)*
 
 **Previous Script Attempt (to be revised):**
 ```python
@@ -114,18 +179,23 @@ Apply the fix(es) and output the corrected code now."""
 ```
 
 **IMPORTANT REVISION GUIDELINES:**
-1. **Fix Noted Visual Issues:** For each issue mentioned in the feedback, modify the code to resolve it:
-   - **Overlaps/Clutter/Framing:** If objects overlap, clutter the scene, or go off-frame, reposition them using `.shift()`, `.next_to()`, `.to_edge()`, or `VGroup().arrange(...)`.
-   - **Scene Transitions [STRICT]:** If the feedback mentions lingering elements from a previous scene causing overlap, **ensure all relevant Mobjects from the previous logical scene block are removed** using `self.play(FadeOut(obj1, obj2, ...))` **before** starting the next scene's animations. Be thorough in identifying all elements that should be removed for a clean transition.
-   - **Text Readability:** Ensure text is large enough, well-positioned, and contrasts with the background. If feedback mentions □□□ boxes, add the correct `font="..."` parameter to the `Text` object.
-   - **Pacing/Timing [STRICT]:** If feedback indicates rushed pacing, **increase animation `run_time`** (e.g., `run_time=1.5` or `run_time=2`) and **add more `self.wait(1)` or `self.wait(1.5)` calls** between distinct steps and especially between scene transitions to allow viewers to process the information.
-   - **3D Camera Angles:** If using `ThreeDScene` and feedback mentions poor angles, adjust `self.set_camera_orientation(phi=..., theta=...)` for better readability (e.g., `phi=60*DEGREES, theta=-45*DEGREES`).
-   - **Plan Consistency:** Ensure the visuals still follow the sequence and intent of the original plan after your changes.
-2. **Use Feedback Hints:** If the feedback included specific code pointers or suggested changes, incorporate those precisely (e.g. “Text at line 45 overlaps” -> move or size the text at that line).
-3. **Preserve Structure & Intent:** Do not remove any part of the content unless it’s causing the issue. Keep the one-class format and overall flow. We are only *improving* the existing script, not reinventing it.
-4. **Standard Requirements:** The script must still meet all the requirements from the initial generation (imports, single class, correct use of `Scene` vs `ThreeDScene`, proper LaTeX, etc.). Only change things related to the feedback issues unless you spot an outright error.
-5. **LaTeX Check:** Double-check any LaTeX in the code for errors since visual issues can sometimes come from unseen LaTeX problems.
-6. **CODE ONLY OUTPUT:** Output the full revised Python script with the improvements. Do not include explanations or any text aside from the code itself.
+(Adhere to HARD RULES above first)
+1. **Address Each Issue from Structured Feedback:** Iterate through each issue provided in the "Structured Evaluation Feedback" JSON. For each issue:
+    - Refer to its `scene_number`, `scene_title`, `type`, `severity`, `description`, and `suggestion`.
+    - Apply the `suggestion` if it's actionable. If not, use the `description` and `type` to guide your fix.
+    - Examples of how to address common issue `type`s:
+        - **"overlap", "off_frame", "layout":** Reposition objects using `.shift()`, `.next_to()`, `.to_edge()`, or an arrangement helper like `safe_arrange(...)` or `VGroup().arrange(...)`. Ensure elements are within the frame.
+        - **"lingering_elements":** Ensure clean transitions by using `self.play(FadeOut(...))` or `fade_out_all(self)` to remove *all* necessary elements from the previous logical scene block.
+        - **"readability", "contrast", "font_error":** Adjust text size, position, color, or add/correct `font="..."` parameter in `Text()` objects.
+        - **"pacing":** Increase animation `run_time` (e.g., `run_time=1.5`) or add more `self.wait(max(len(str(text_obj.text))/12, 1))` calls, especially after `Text` or `MathTex`.
+        - **"camera_angle", "camera_movement":** If using `ThreeDScene`, adjust `self.set_camera_orientation(...)`, `self.move_camera(...)`, or ambient rotation settings as per the issue's description and suggestion.
+        - **"plan_deviation", "missing_scene_element":** Ensure the visuals align with the original video plan and that all key elements are present.
+2. **Plan Consistency:** After addressing specific issues, ensure the visuals still match the original plan's intent and flow.
+3. **Handling `MathTex` Indexing:** Index correctly (`eq[0]`, `eq[1]`, etc.) or use `VGroup(eq[0], eq[1])` when applying operations like `SurroundingRectangle` to parts of multi-string `MathTex`.
+4. **Preserve Structure & Intent:** Do not remove any part of the content unless it’s causing the issue or is explicitly suggested for removal. Keep the one-class format and overall flow. We are only *improving* the existing script, not reinventing it.
+5. **Standard Requirements:** The script must still meet all the requirements from the initial generation (imports, single class, correct use of `Scene` vs `ThreeDScene`, proper LaTeX, etc.). Only change things related to the feedback issues unless you spot an outright error.
+6. **LaTeX Check:** Double-check any LaTeX in the code for errors since visual issues can sometimes come from unseen LaTeX problems.
+7. **CODE ONLY OUTPUT:** Output the full revised Python script with the improvements. Do not include explanations or any text aside from the code itself.
 
 Make the above adjustments and **provide the updated code** now, ensuring the video issues are resolved."""
         next_eval_iter = eval_iter + 1 # Increment evaluation counter
@@ -135,20 +205,26 @@ Make the above adjustments and **provide the updated code** now, ensuring the vi
 
     else: # Generation mode
         # Enhanced prompt for Generation mode, emphasizing transitions and pacing
-        prompt = f"""Generate **one single, complete, and runnable Manim Python script** containing **exactly ONE class** (e.g., `CombinedScene`) to explain '{user_concept}' in **{language}**.
+        prompt = f"""{helper_block_instruction}
+{hard_rules}
+Generate **one single, complete, and runnable Manim Python script** containing **exactly ONE class** (e.g., `CombinedScene`) to explain '{user_concept}' in **{language}**.
 
 The video plan consists of the following scenes (provided in {language}, with technical terms/formulas potentially in English), which should be implemented **sequentially within the single `construct` method** of the class:
 {full_plan_description}
 
 **VERY IMPORTANT REQUIREMENTS:**
+(Adhere to HARD RULES above first)
 1.  **Imports:** Start with necessary Manim imports (`from manim import *`). **Assume common classes like Circle, Square, Text, MathTex, ThreeDScene, ParametricSurface, Surface etc. are available directly under `manim` unless you know otherwise for the specific version.**
 2.  **SINGLE Class Definition:** Define **exactly ONE Python class**.
-    *   Inherit from `ThreeDScene` **only if** the plan explicitly requires 3D animations or camera movement.
+    *   Inherit from `ThreeDScene` **only if** the plan explicitly requires 3D objects, 3D transformations, or camera angle changes.
     *   Otherwise, **strictly inherit from `Scene` (2D)**.
-3.  **`construct` Method:** Implement all visual steps from the plan sequentially within the single `construct(self)` method. Use comments like `# --- Scene [Number]: [Scene Title] ---` to separate sections for each scene from the plan (for clarity).
-    *   **If using `ThreeDScene`:** set a good camera angle at the start of construct (e.g. `self.set_camera_orientation(phi=75*DEGREES, theta=-30*DEGREES)` or similar) so 3D objects are clearly visible.
-4.  **Language & Text:** All visible text should be in **{language}** (the target audience’s language).
-    *   If {language} is not English, you **MUST** provide a suitable `font="Font Name"` for each `Text("...")` to ensure the characters render (e.g. Noto Sans fonts for non-Latin scripts). **Do not** set a font for English text.
+3.  **`construct` Method:** Implement all visual steps sequentially. Use comments `# --- Scene [Number]: [Scene Title] ---` for clarity.
+    *   **3D Camera Setup (If using `ThreeDScene`):**
+        *   **Initial View:** Start with a clear view using `self.set_camera_orientation(phi=..., theta=..., gamma=...)`. Good defaults are often `phi=60*DEGREES, theta=-45*DEGREES, gamma=0`. Adjust `phi` (up/down tilt) and `theta` (left/right rotation) to best show the initial objects.
+        *   **Animated Changes:** If a scene description implies showing something from a different perspective (e.g., "rotate to view the back", "zoom in on the detail"), use `self.move_camera(phi=..., theta=..., frame_center=..., zoom=..., run_time=...)` to animate the transition smoothly (e.g., `run_time=2`). Center the camera (`frame_center=object.get_center()`) on the object of interest during the move.
+        *   **Ambient Rotation:** For complex, evolving 3D scenes, consider adding subtle continuous rotation with `self.begin_ambient_camera_rotation(rate=0.1, about='theta')` during the main animation, and stop it with `self.stop_ambient_camera_rotation()` before the next static view or scene transition. Use sparingly to avoid distraction.
+4.  **Language & Text:** All visible text in **{language}**.
+    *   If {language} is not English, **MUST** provide a suitable `font="Font Name"` for each `Text("...")` (e.g., `"Noto Sans JP"` for Japanese). **Do not** set font for English.
     **IMPORTANT:** If `{language}` is NOT English ('en-US', 'en-GB', etc.), you **MUST** specify an appropriate `font` parameter within the `Text(...)` object to ensure correct rendering. Examples:
         *   For Hindi ('hi-IN'): `Text("...", font="Noto Sans Devanagari")`
         *   For Tamil ('ta-IN'): `Text("...", font="Noto Sans Tamil")`
@@ -161,11 +237,24 @@ The video plan consists of the following scenes (provided in {language}, with te
         for other languages, use the appropriate Noto Sans font for that language.
     *   Keep technical terms, code, or math formulae in English if we can’t translate them well (e.g., `MathTex`, `a^2+b^2=c^2`).
 5.  **LaTeX and Math:** Use raw strings (prefix `r` or double backslashes) for any LaTeX in `Tex`/`MathTex` to avoid errors. Check that any LaTeX is valid and properly formatted (e.g., use `\text{{}}` for non-math text in equations).
-6.  **Positioning & No Overlap:** Carefully position all mobjects so nothing important overlaps or goes off-screen (the 16:9 frame). Use methods like `.to_edge()`, `.shift()`, `.next_to()`, or `.arrange()` as needed to keep elements tidy and within frame. If the plan calls for successive elements in the same place, remove or fade out the previous ones before adding new ones.
-7.  **Animation Usage:** Use appropriate Manim animations and transformations for each step (e.g. `Write`, `Create`, `FadeIn`, `Transform`). **Important**: ensure any object you want to transform or fade out is already added to the scene (either by a previous `self.add(...)` or an animation like `Create`) before you call `self.play(Transform(...))` or `self.play(FadeOut(...))`. This prevents runtime errors and makes the animation visible.
-8.  **Timing and Pacing:** Use `self.wait()` and `run_time` parameters to control the pace. Give the viewer enough time to read text and see transitions, especially after important animations.
-9.  **Self-Contained & Error-Free:** The script should run **without any errors**. Include all necessary imports and definitions. Avoid undefined variables or mismatched parentheses.
-10. **CODE ONLY OUTPUT:** Your response **must be only** the Python code for the complete script. Do **NOT** include explanations, markdown, or anything outside the code. No comments in the output except those marking scene sections.
+6.  **Handling `MathTex` Indexing:** When applying operations like `SurroundingRectangle` to parts of a `MathTex` object created with multiple strings (e.g., `MathTex("a", "+", "b")`), ensure you are indexing correctly to get a valid sub-mobject. `eq[0]` usually works for the first part, `eq[1]` for the second, etc. If surrounding multiple parts, group them explicitly: `VGroup(eq[0], eq[1])`. Incorrect indexing can cause `TypeError`. Example:
+    ```python
+    # Example for prompt: How to correctly surround parts of MathTex
+    my_equation = MathTex("a^2", "+", "b^2", "=", "c^2")
+    self.play(Write(my_equation))
+    # To surround 'a^2', access the first part:
+    rect_a_squared = SurroundingRectangle(my_equation[0], buff=0.1)
+    self.play(Create(rect_a_squared))
+    # To surround multiple parts like 'a^2 + b^2':
+    group_to_surround = VGroup(my_equation[0], my_equation[1], my_equation[2])
+    rect_lhs = SurroundingRectangle(group_to_surround, buff=0.1)
+    self.play(Create(rect_lhs))
+    ```
+7.  **Positioning & No Overlap:** Carefully position all mobjects so nothing important overlaps or goes off-screen. Use methods like `.to_edge()`, `.shift()`, `.next_to()`, or `.arrange()` as needed to keep elements tidy and within frame. If the plan calls for successive elements in the same place, remove or fade out the previous ones before adding new ones.
+8.  **Animation Usage:** Use appropriate Manim animations and transformations for each step (e.g. `Write`, `Create`, `FadeIn`, `Transform`). **Important**: ensure any object you want to transform or fade out is already added to the scene (either by a previous `self.add(...)` or an animation like `Create`) before you call `self.play(Transform(...))` or `self.play(FadeOut(...))`. This prevents runtime errors and makes the animation visible.
+9.  **Timing and Pacing:** Use `self.wait()` and `run_time` parameters to control the pace. Give the viewer enough time to read text and see transitions, especially after important animations.
+10. **Self-Contained & Error-Free:** The script should run **without any errors**. Include all necessary imports and definitions. Avoid undefined variables or mismatched parentheses.
+11. **CODE ONLY OUTPUT:** Your response **must be only** the Python code for the complete script. Do **NOT** include explanations, markdown, or anything outside the code. No comments in the output except those marking scene sections.
 
 Now, **generate the Python code** for the single-class Manim scene based on the plan above, following all requirements.
 Generate the single-class script now in **{language}** (except for code/math terms), paying close attention to LaTeX, positioning, 3D usage, camera angles, and animation logic."""
@@ -192,7 +281,7 @@ Generate the single-class script now in **{language}** (except for code/math ter
 
         # Postprocess: inline LaTeX & estimate duration
         full_script_code = fix_inline_latex(full_script_code)
-        duration = estimate_scene_time(full_script_code)
+        # duration = estimate_scene_time(full_script_code)
 
         # Extract class name
         matches = re.findall(r"class\s+(\w+)\s*\(\s*(?:manim\.)?(?:Scene|ThreeDScene)\s*\)", full_script_code)

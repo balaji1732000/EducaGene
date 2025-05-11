@@ -29,5 +29,5 @@ class WorkflowState:
     current_code: Optional[str] = None
     full_script_path: Optional[str] = None
     all_scene_class_names: List[str] = field(default_factory=list)
-    evaluation_feedback: Optional[str] = None # Consolidated feedback (from code OR combined code/video eval)
+    evaluation_feedback: Optional[List[Dict[str, Any]]] = None # Changed type to List[Dict] for structured feedback
     error_search_context: Optional[str] = None # Context from web search for render errors

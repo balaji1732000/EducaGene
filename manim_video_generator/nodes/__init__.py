@@ -10,3 +10,4 @@ from .generate_audio import generate_audio_node
 from .combine_final_video_audio import combine_final_video_audio_node
 from .should_retry_full_script import should_retry_full_script
 from .check_render_result import check_render_result
+from .search_for_solution import search_for_solution_node # Added import for new node

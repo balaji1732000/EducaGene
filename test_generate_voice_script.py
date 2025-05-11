@@ -11,11 +11,11 @@ load_dotenv()  # Load environment variables from .env file
 
 
 client = genai.Client(api_key=os.getenv('GEMINI_API_KEY'))  # Initialize Gemini client with API key
-def generate_final_script_node(state: WorkflowState) -> Dict[str, Any]:
+def generate_final_script_node(language, video) -> Dict[str, Any]:
     """Generates a voiceover script via Gemini for the combined video in the target language."""
     app.logger.info("--- generate_final_script_node (Gemini voiceover) ---")
-    video_path = state.video_path
-    language = state.language # Get target language
+    video_path = video
+    language = language # Get target language
     if not video_path or not os.path.exists(video_path):
         err = f"Cannot generate voiceover: Missing video at {video_path}"
         app.logger.error(err)
@@ -68,13 +68,11 @@ Output ONLY the raw narration text in **{language}** without any additional text
     app.logger.info("Voiceover script generated successfully.")
     return {'voiceover_script': script, 'error_message': None}
 
-
-# if __name__ == "__main__":
-#     # Test the function with a dummy state
-#     test_state = WorkflowState(
-#         video_path="C:/Users/ASUS/Documents/Video generation/manim-video-generator/tmp_requests/req_20250508_003227_ef52f9/final_buildreq_20250508_003227_ef52f9_combined_video.mp4",
-#         language="en-US",
-#         request_id="test_request"
-#     )
-#     result = generate_final_script_node(test_state)
-#     print(result)  # Print the result for testing purposes
+if __name__ == "__main__":
+    # Test the function with a dummy state
+    
+    video_path="C:/Users/ASUS/Documents/Video generation/manim-video-generator/tmp_requests/req_20250508_001825_20649c/final_build/req_20250508_001825_20649c_combined_video.mp4"
+    language="en-US"
+    
+    result = generate_final_script_node(language, video_path)
+    print(result)  # Print the result for testing purposes
