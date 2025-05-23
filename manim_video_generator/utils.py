@@ -90,8 +90,10 @@ def upload_to_blob_storage(local_file_path: str, request_id: str) -> Optional[st
     """
     app.logger.info(f"Attempting to upload '{local_file_path}' to Azure Blob Storage...")
 
-    connect_str = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
-    container_name = os.getenv("AZURE_STORAGE_CONTAINER_NAME")
+    connect_str = os.getenv("AZURE_STORAGE_CONNECTION_STRING").strip('"')
+    app.logger.debug(f"Using connection string: {os.getenv("AZURE_STORAGE_CONNECTION_STRING")}")
+    app.logger.debug(f"Using container name: {os.getenv("AZURE_STORAGE_CONTAINER_NAME")}")
+    container_name = os.getenv("AZURE_STORAGE_CONTAINER_NAME").strip('"')
 
     if not connect_str or connect_str == "YOUR_CONNECTION_STRING_HERE":
         app.logger.error("Azure Storage connection string not configured in .env file.")

@@ -31,3 +31,6 @@ class WorkflowState:
     all_scene_class_names: List[str] = field(default_factory=list)
     evaluation_feedback: Optional[List[Dict[str, Any]]] = None # Changed type to List[Dict] for structured feedback
     error_search_context: Optional[str] = None # Context from web search for render errors
+    # History lists for in-memory tracking of attempts
+    render_error_history: List[Dict[str, Any]] = field(default_factory=list) # Stores {"script": "...", "error": {...}}
+    eval_feedback_history: List[Dict[str, Any]] = field(default_factory=list) # Stores {"script": "...", "feedback": {...}}

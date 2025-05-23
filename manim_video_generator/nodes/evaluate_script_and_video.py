@@ -222,12 +222,21 @@ Respond in the exact JSON schema given in the system message. All descriptive te
             app.logger.info(f"Parsed evaluation issues: {json.dumps(feedback, indent=2)}")
             # app.logger.info(f"Parsed evaluation metrics: {metrics}")
 
+            # Log to history if revision is needed
+            if verdict == "REVISION_NEEDED":
+                state.eval_feedback_history.append({
+                    "script": state.current_code, # Assuming current_code is in state
+                    "feedback": eval_data # Store the full parsed eval_data
+                })
+                app.logger.info(f"Appended to eval_feedback_history. Current length: {len(state.eval_feedback_history)}")
+
         except (json.JSONDecodeError, ValueError) as parse_e:
             err_msg = f"Failed to parse evaluation JSON response or invalid structure: {parse_e}. Raw response: {response.text if hasattr(response, 'text') else 'N/A'}"
             app.logger.error(err_msg)
             # Fallback: create a generic issue to indicate parsing failure
             verdict = "REVISION_NEEDED"
-            feedback = [{
+            # Ensure feedback is a list of dicts, even for fallback
+            parsed_fallback_issue = {
                 "scene_number": 0,
                 "scene_title": "JSON Parsing Error",
                 "frame": None,
@@ -235,7 +244,19 @@ Respond in the exact JSON schema given in the system message. All descriptive te
                 "severity": "Critical",
                 "description": f"Failed to parse LLM evaluation response. Error: {parse_e}",
                 "suggestion": "Check LLM response format and system prompt for schema adherence."
-            }]
+            }
+            feedback = [parsed_fallback_issue]
+            # Log fallback to history as well
+            state.eval_feedback_history.append({
+                "script": state.current_code,
+                "feedback": { # Construct a minimal eval_data like structure for consistency
+                    "verdict": "REVISION_NEEDED",
+                    "issues": feedback,
+                    "metrics": {} # Empty metrics for fallback
+                }
+            })
+            app.logger.info(f"Appended fallback JSON parsing error to eval_feedback_history. Current length: {len(state.eval_feedback_history)}")
+
 
         return {"evaluation_feedback": feedback, "code_eval_verdict": verdict, "error_message": None}
 

@@ -104,7 +104,7 @@ def generate_audio_node(state: WorkflowState) -> Dict[str, Any]:
     # SSML with target language and the selected voice
     # Escape special XML characters in the script before inserting into SSML
     escaped_script = html.escape(script) 
-    formatted_text = escaped_script.replace('\n\n', '<break time="100ms"/>')
+    formatted_text = escaped_script.replace('\n\n', '<break time="20ms"/>')
     ssml = f"""<speak version='1.0' xml:lang='{language}'>
 <voice name='{voice_name}'>{formatted_text}</voice>
 </speak>"""

@@ -33,7 +33,31 @@ def generate_full_script_node(state: WorkflowState) -> Dict[str, Any]:
 
     # Log using appropriate iteration counter for the current mode
     current_iter = render_iter if mode == "Render Error Revision" else eval_iter if mode == "Evaluation Revision" else 0
-    app.logger.info(f"--- generate_single_class_script (Mode: {mode}, Iteration: {current_iter}) ---")
+    app.logger.info(f"--- generate_full_script_node (Mode: {mode}, Iteration: {current_iter}) ---") # Corrected log message
+
+    # --- Prepare History String ---
+    history_prompt_addition = ""
+    if mode == "Render Error Revision" and state.render_error_history:
+        history_prompt_addition = "\n\n## Previous Render Error Attempts for this Request:\n"
+        for i, attempt in enumerate(state.render_error_history):
+            script_excerpt = attempt.get("script", "")[:150] # Show a snippet
+            error_info = attempt.get("error", {})
+            if isinstance(error_info, dict): # Structured error
+                error_summary = f"Type: {error_info.get('error_details', [{}])[0].get('error_type', 'N/A')}, Message: {error_info.get('error_details', [{}])[0].get('error_message', 'N/A')[:100]}"
+            else: # Raw error string
+                error_summary = str(error_info)[:150]
+            history_prompt_addition += f"- Attempt {i+1} (Script: '{script_excerpt}...'): Led to Error: {error_summary}...\n"
+    elif mode == "Evaluation Revision" and state.eval_feedback_history:
+        history_prompt_addition = "\n\n## Previous Evaluation Feedback Attempts for this Request:\n"
+        for i, attempt in enumerate(state.eval_feedback_history):
+            script_excerpt = attempt.get("script", "")[:150]
+            feedback_info = attempt.get("feedback", {})
+            issues_summary = [f"{issue.get('type', 'N/A')}: {issue.get('description', 'N/A')[:50]}..." for issue in feedback_info.get("issues", [])[:2]] # Summarize first 2 issues
+            history_prompt_addition += f"- Attempt {i+1} (Script: '{script_excerpt}...'): Resulted in Feedback: {', '.join(issues_summary) if issues_summary else 'No specific issues listed.'}\n"
+    
+    if history_prompt_addition:
+        app.logger.info(f"Adding history to prompt: {history_prompt_addition}")
+    # --- End History String Preparation ---
 
     # Build full_plan_description
     full_plan_description = ""
@@ -117,6 +141,8 @@ D.  Use `self.wait(max(len(str(text_mobject.text))/12, 1))` after displaying any
         # Enhanced prompt for Render Error Revision with specific guidance for ImportError/NameError
         prompt = f"""{helper_block_instruction}
 {hard_rules}
+{history_prompt_addition}
+
 The previous attempt to render the Manim script for **'{user_concept}'** failed with a runtime error. Your task is to meticulously analyze the provided error information (which might be structured JSON or raw text) and **fix the specific error** in the code.
 
 **Original Video Plan (for context only):**
@@ -162,6 +188,8 @@ Apply the fix(es) and output the corrected code now."""
         # Enhanced prompt for Evaluation Revision, focusing on visual fixes including 3D camera and transitions/pacing
         prompt = f"""{helper_block_instruction}
 {hard_rules}
+{history_prompt_addition}
+
 The Manim script for **'{user_concept}'** rendered successfully, but the resulting video has some **visual issues** noted in the evaluation. **Revise the script** to address these issues without altering the intended content.
 
 **Original Video Plan (for reference to maintain intent):**

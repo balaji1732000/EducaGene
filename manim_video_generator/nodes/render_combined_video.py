@@ -24,10 +24,10 @@ class StructuredErrorResponse(BaseModel):
     error_details: List[StructuredErrorDetail] = Field(default_factory=list)
 
 # --- Helper Function for Error Extraction ---
-def _extract_structured_error(stderr_text: str) -> Optional[str]:
+def _extract_structured_error(stderr_text: str) -> Optional[Dict[str, Any]]: # Return Dict or None
     """
     Uses an LLM to attempt to parse stderr text into a structured JSON error report.
-    Returns the JSON string if successful and errors are found, otherwise returns None.
+    Returns a dictionary if successful and errors are found, otherwise returns None.
     """
     app.logger.info("Attempting to extract structured error from stderr...")
     if not stderr_text:
@@ -91,10 +91,10 @@ JSON Output:"""
         validated_response = StructuredErrorResponse.model_validate_json(response_text)
 
         if validated_response.errors_found:
-            # Return the validated data as a pretty-printed JSON string
-            json_output = validated_response.model_dump_json(indent=2)
+            # Return the validated data as a dictionary
+            error_dict = validated_response.model_dump() 
             app.logger.info("Successfully extracted structured error details.")
-            return json_output
+            return error_dict
         else:
             app.logger.info("LLM reported no structured errors found in stderr.")
             return None # No structured errors found
@@ -166,8 +166,16 @@ def render_combined_video_node(state: WorkflowState) -> Dict[str, Any]:
             #     app.logger.error(f"Manim render failed (Code {res.returncode}). Could not extract structured error. Using raw stderr tail:\n{fallback_error}")
             #     processed_error_info = fallback_error # Pass raw tail as error
 
-            # Return the processed info (JSON string or raw string)
-            return {'rendering_error': processed_error_info, 'video_path': None}
+            # Log to history
+            error_to_log = processed_error_info if isinstance(processed_error_info, dict) else {"raw_error": raw_stderr}
+            state.render_error_history.append({
+                "script": state.current_code, # Assuming current_code is in state
+                "error": error_to_log
+            })
+            app.logger.info(f"Appended to render_error_history. Current length: {len(state.render_error_history)}")
+            
+            # Return the processed info (dict or raw string)
+            return {'rendering_error': processed_error_info or raw_stderr, 'video_path': None}
 
         # --- Robust File Finding Logic ---
         # (Keep the existing robust finding logic for successful renders)
@@ -210,14 +218,24 @@ def render_combined_video_node(state: WorkflowState) -> Dict[str, Any]:
             return {'rendering_error': None, 'video_path': None, 'error_message': err}
 
     except subprocess.TimeoutExpired:
-        err = f"Manim render timed out after 600s"
-        app.logger.error(err)
-        # Attempt to extract structured error (though stderr might be empty on timeout)
-        processed_error_info = _extract_structured_error(err) or err
-        return {'rendering_error': processed_error_info, 'video_path': None}
+        err_msg = f"Manim render timed out after 6000s" # Corrected timeout value
+        app.logger.error(err_msg)
+        processed_error_info = _extract_structured_error(err_msg) # Attempt to structure timeout message
+        error_to_log = processed_error_info if isinstance(processed_error_info, dict) else {"raw_error": err_msg}
+        state.render_error_history.append({
+            "script": state.current_code,
+            "error": error_to_log
+        })
+        app.logger.info(f"Appended timeout error to render_error_history. Current length: {len(state.render_error_history)}")
+        return {'rendering_error': processed_error_info or err_msg, 'video_path': None}
     except Exception as e:
-        err = f"Unexpected error during render: {e}"
-        app.logger.error(err, exc_info=True)
-        # Attempt to extract structured error from the exception string
-        processed_error_info = _extract_structured_error(str(e)) or err
-        return {'rendering_error': processed_error_info, 'video_path': None}
+        err_msg = f"Unexpected error during render: {e}"
+        app.logger.error(err_msg, exc_info=True)
+        processed_error_info = _extract_structured_error(str(e)) # Attempt to structure exception
+        error_to_log = processed_error_info if isinstance(processed_error_info, dict) else {"raw_error": err_msg}
+        state.render_error_history.append({
+            "script": state.current_code,
+            "error": error_to_log
+        })
+        app.logger.info(f"Appended unexpected error to render_error_history. Current length: {len(state.render_error_history)}")
+        return {'rendering_error': processed_error_info or err_msg, 'video_path': None}
