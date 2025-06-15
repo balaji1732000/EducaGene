@@ -20,22 +20,13 @@ import google.generativeai as genai
 # Load environment variables as early as possible
 from dotenv import load_dotenv
 load_dotenv()
-
 from flask import Flask, render_template, request, jsonify, url_for
 from manim import *
-# from dotenv import load_dotenv # Moved up
 from langgraph.graph import StateGraph, END
-from langchain_openai import AzureChatOpenAI
 import azure.cognitiveservices.speech as speechsdk
 
 # Load environment variables as early as possible
 load_dotenv()
-
-try:
-    import moviepy as mp
-except ImportError:
-    mp = None
-    logging.warning("moviepy not installed. Video concatenation and merging will fail.")
 
 try:
     import moviepy as mp

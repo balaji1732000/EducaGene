@@ -165,3 +165,4 @@ crawl4ai                # Crawl4AI web crawler
 playwright              # headless browser for Crawl4AI
 requests                # For HTTP requests in html_extractor.py
 beautifulsoup4          # For HTML parsing (bs4) in html_extractor.py
+pytest>=7.2.0 
