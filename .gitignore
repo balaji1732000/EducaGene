@@ -22,6 +22,7 @@ tmp_requests/
 static/videos/
 *.mp4
 *.wav
+web_scrap/
 
 # macOS
 .DS_Store
@@ -32,3 +33,6 @@ static/videos/
 # Other specified folders
 previous_code/
 tests/
+tmp_requests/
+agentic_pipeline/
+previous_code/

@@ -1,20 +1,18 @@
 import os
-import subprocess # Keep for _get_video_duration if re-added, but not used now
-import json
-from typing import Dict, Any, Optional, Tuple, List
+import subprocess
+import json # Added for JSON parsing
+from typing import Dict, Any, Optional, Tuple
 
 from google import genai
 from google.genai import types
 from manim_video_generator.config import app
 from manim_video_generator.utils import upload_to_gemini, wait_for_files_active
-from manim_video_generator.state import WorkflowState # Still needed for type hinting in actual node
+from manim_video_generator.state import WorkflowState
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv()  # Load environment variables from .env file
 
-client = genai.Client(api_key=os.getenv('GEMINI_API_KEY'))
-
-# Removed _get_video_duration_and_word_target function as per feedback
+client = genai.Client(api_key=os.getenv('GEMINI_API_KEY'))  # Initialize Gemini client with API key
 
 def _generate_timestamped_script(
     video_file: types.File, 
@@ -76,7 +74,7 @@ Do NOT include any text outside this JSON structure.
 
     try:
         response = llm_client.models.generate_content(
-            model="gemini-1.5-flash-latest",
+            model="gemini-2.5-flash-preview-04-17",
             config=generation_config_ts,
             contents=[prompt, video_file]
         )
@@ -104,7 +102,7 @@ Do NOT include any text outside this JSON structure.
         app.logger.error(f"Unexpected error generating timestamped script: {e}")
         return {"error": f"Unexpected error: {e}"}
 
-def _convert_timestamped_to_plain_script(segments: List[Dict[str, str]]) -> str:
+def _convert_timestamped_to_plain_script(segments: list[Dict[str, str]]) -> str:
     """Converts a list of timestamped script segments to a single plain text script."""
     if not segments:
         return ""
@@ -112,11 +110,11 @@ def _convert_timestamped_to_plain_script(segments: List[Dict[str, str]]) -> str:
     return " ".join(plain_script_parts)
 
 
-def generate_final_script_node(state: WorkflowState) -> Dict[str, Any]:
+def generate_final_script_node(video_path, language) -> Dict[str, Any]:
     """Generates a voiceover script via Gemini for the combined video in the target language."""
     app.logger.info("--- generate_final_script_node (Gemini voiceover) ---")
-    video_path = state.video_path
-    language = state.language
+    video_path = video_path
+    language = language
 
     if not video_path or not os.path.exists(video_path):
         err = f"Cannot generate voiceover: Missing video at {video_path}"
@@ -184,7 +182,7 @@ Do NOT include any text outside this JSON structure.
             temperature=0.7,
             top_p=0.95,
             top_k=40,
-            max_output_tokens=8192,
+            max_output_tokens=65000,
             response_mime_type="application/json",
             safety_settings=[
                 {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
@@ -237,7 +235,180 @@ Do NOT include any text outside this JSON structure.
     app.logger.info(f"Final voiceover script generated. Word count: {actual_word_count if actual_word_count is not None else 'N/A'}.")
     return {'voiceover_script': script, 'error_message': None}
 
-# if __name__ == "__main__":
-# # Test the function with a dummy state
-# # This part will be updated in test_generate_voice_script.py instead
-# pass
+
+
+import os
+from typing import Dict, Any, Optional, List
+import azure.cognitiveservices.speech as speechsdk
+import traceback
+import json # Import json
+import html # Import html for escaping
+
+# Pydantic is not needed here as we are parsing the JSON manually
+# from pydantic import BaseModel, Field
+
+from manim_video_generator.state import WorkflowState
+from manim_video_generator.config import app, APP_ROOT # Import APP_ROOT
+
+# --- Helper Function to Get Voice Name ---
+# def _get_voice_name_for_locale(locale: str, voice_data_path: str = "text_to_speech.json") -> Optional[str]:
+#     """
+#     Loads voice data from a JSON file and finds the first matching voice ShortName for the given locale.
+#     """
+#     default_voice = "en-US-AvaMultilingualNeural" # Default fallback voice
+#     # Construct full path relative to project root (assuming text_to_speech.json is in manim-video-generator folder)
+#     full_path = os.path.join(APP_ROOT, voice_data_path)
+
+#     if not os.path.exists(full_path):
+#         app.logger.error(f"Voice data file not found at: {full_path}. Using default voice '{default_voice}'.")
+#         return default_voice
+
+#     try:
+#         with open(full_path, 'r', encoding='utf-8') as f:
+#             voice_data = json.load(f)
+
+#         if not isinstance(voice_data, list):
+#             app.logger.error(f"Invalid format in {full_path}: Expected a JSON list. Using default voice '{default_voice}'.")
+#             return default_voice
+
+#         # Find the first voice matching the locale
+#         for voice_info in voice_data:
+#             if isinstance(voice_info, dict) and voice_info.get("Locale") == locale:
+#                 voice_name = voice_info.get("ShortName")
+#                 if voice_name:
+#                     app.logger.info(f"Found voice '{voice_name}' for locale '{locale}'.")
+#                     return voice_name
+#                 else:
+#                      app.logger.warning(f"Found matching locale '{locale}' but 'ShortName' is missing. Skipping.")
+
+#         # If no specific voice is found for the locale, try finding a multilingual voice as a better fallback
+#         app.logger.warning(f"No specific voice found for locale '{locale}' in {full_path}. Searching for a suitable multilingual voice...")
+#         for voice_info in voice_data:
+#              # Heuristic: Check if 'Multilingual' is in the name and if the locale might be generally supported
+#              # This is imperfect; Azure documentation is the best source for multilingual support.
+#              if isinstance(voice_info, dict) and "MultilingualNeural" in voice_info.get("ShortName", ""):
+#                   # Prioritize Ava if available
+#                   if "en-US-AvaMultilingualNeural" in voice_info.get("ShortName", ""):
+#                        voice_name = "en-US-AvaMultilingualNeural"
+#                        app.logger.info(f"Using default multilingual voice '{voice_name}' for locale '{locale}'.")
+#                        return voice_name
+#                   # Otherwise take the first multilingual found (could be improved)
+#                   voice_name = voice_info.get("ShortName")
+#                   if voice_name:
+#                        app.logger.info(f"Using first available multilingual voice '{voice_name}' for locale '{locale}'.")
+#                        return voice_name
+
+#         # Final fallback if no specific or multilingual voice found
+#         app.logger.warning(f"No specific or suitable multilingual voice found for locale '{locale}'. Using absolute default '{default_voice}'.")
+#         return default_voice
+
+#     except json.JSONDecodeError:
+#         app.logger.error(f"Error decoding JSON from {full_path}. Using default voice '{default_voice}'.")
+#         return default_voice
+#     except Exception as e:
+#         app.logger.error(f"Error reading or processing {full_path}: {e}. Using default voice '{default_voice}'.")
+#         return default_voice
+
+# --- Original Node Function (Modified) ---
+def generate_audio_node(voice_over_script) -> Dict[str, Any]:
+    """TTS: Converts voiceover script into audio file using a dynamically selected voice."""
+    app.logger.info("--- generate_audio_node ---")
+    script = voice_over_script
+    language = "en-US" # Get target language (locale)
+    if not script:
+        return {'error_message': 'No voiceover script provided', 'audio_path': None}
+
+    # Using static voice and language as per user's local test file structure
+    voice_name = "en-US-AvaMultilingualNeural" # Static voice for testing
+    # language parameter is already "en-US" from the __main__ block for this local function
+
+    # Ensure audio_dir is the current working directory for the test output
+    audio_dir = "." # Output audio to the current directory
+    # No need for os.makedirs(audio_dir, exist_ok=True) if audio_dir is "."
+    
+    # Use a fixed name for the test output file, or make it unique if running multiple tests
+    request_id_for_test = "test_audio_001" # Example request_id for filename
+    out_path = os.path.join(audio_dir, f"{request_id_for_test}_audio.wav")
+    app.logger.info(f"Test audio output path: {os.path.abspath(out_path)}")
+
+    try:
+        cfg = speechsdk.SpeechConfig(subscription=os.getenv('AZURE_SPEECH_KEY'), region=os.getenv('AZURE_SPEECH_REGION'))
+        cfg.speech_synthesis_voice_name = voice_name
+    except Exception as e:
+         app.logger.error(f"Failed to configure Azure Speech SDK: {e}")
+         return {'error_message': f"Azure Speech SDK config error: {e}", 'audio_path': None}
+
+    audio_cfg = speechsdk.audio.AudioOutputConfig(filename=out_path)
+    synthesizer = speechsdk.SpeechSynthesizer(speech_config=cfg, audio_config=audio_cfg)
+
+    # SSML with target language and the selected voice
+    # Escape special XML characters in the script before inserting into SSML
+    escaped_script = html.escape(script) 
+    formatted_text = escaped_script.replace('\n\n', '<break time="100ms"/>')
+    ssml = f"""<speak version='1.0' xml:lang='{language}'>
+<voice name='{voice_name}'>{formatted_text}</voice>
+</speak>"""
+    app.logger.info(f"Generating audio with language '{language}' and voice '{voice_name}'")
+    app.logger.debug(f"Sending SSML to Azure TTS:\n{ssml}")
+
+    try:
+        result = synthesizer.speak_ssml_async(ssml).get()
+
+        # Check result and log cancellation details on failure
+        if result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
+            app.logger.info(f"Generated audio at {out_path}")
+            return {'audio_path': out_path, 'error_message': None}
+        elif result.reason == speechsdk.ResultReason.Canceled:
+            cancellation_details = result.cancellation_details
+            err_msg = f"TTS failed: Cancelled. Reason: {cancellation_details.reason}"
+            if cancellation_details.reason == speechsdk.CancellationReason.Error:
+                if cancellation_details.error_details:
+                    err_msg += f" | Error Details: {cancellation_details.error_details}"
+            app.logger.error(err_msg)
+            return {'error_message': err_msg, 'audio_path': None}
+        else:
+            err_msg = f"TTS failed with unexpected reason: {result.reason}"
+            app.logger.error(err_msg)
+            return {'error_message': err_msg, 'audio_path': None}
+
+    except Exception as e:
+        err_msg = f"Exception during Azure TTS call: {e}"
+        app.logger.error(err_msg)
+        app.logger.debug(traceback.format_exc())
+        return {'error_message': err_msg, 'audio_path': None}
+
+
+
+if __name__ == "__main__":
+    # Test the function with a dummy state
+    
+    video_path="C:/Users/ASUS/Documents/Video generation/manim-video-generator/tmp_requests/req_20250513_185159_4218fc/final_build/req_20250513_185159_4218fc_combined_video.mp4"
+    language_for_test = "en-US" # Static language for this test
+    
+    script_result = generate_final_script_node(video_path, language_for_test)
+    
+    print("\n--- Script Generation Result (Test) ---")
+    print(json.dumps(script_result, indent=2))
+
+    voice_script_text = script_result.get('voiceover_script')
+    
+    if voice_script_text and not script_result.get('error_message'):
+        app.logger.info("Test script generated successfully. Proceeding to audio generation.")
+        
+        # Call the local generate_audio_node
+        audio_result = generate_audio_node(voice_script_text) # Pass only the script text
+        
+        print("\n--- Audio Generation Result (Test) ---")
+        print(json.dumps(audio_result, indent=2))
+        
+        if audio_result.get('audio_path') and not audio_result.get('error_message'):
+            app.logger.info(f"Test audio generated successfully at: {audio_result.get('audio_path')}")
+        else:
+            app.logger.error(f"Test audio generation failed: {audio_result.get('error_message')}")
+            
+    elif script_result.get('error_message'):
+        app.logger.error(f"Test script generation failed: {script_result.get('error_message')}")
+    else:
+        app.logger.error("Test script generation resulted in no script and no error message.")
+
+    app.logger.info("--- Test Run Finished (Local Functions) ---")

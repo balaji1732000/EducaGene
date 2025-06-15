@@ -9,14 +9,14 @@
     - Langchain (specifically `langchain-openai` for Azure)
     - Google Generative AI SDK (`google.generativeai` for Gemini Vision)
     - Azure OpenAI Service (GPT-4o, potentially others)
-- **Animation Engine:** Manim Community Edition (installed via pip)
+- **Animation Engine:** Manim Community Edition (installed via pip), using the **OpenGL renderer** (`--renderer=opengl`) for potential performance gains.
 - **Text-to-Speech:** Azure Cognitive Services Speech SDK
 - **Video/Audio Processing:** ffmpeg (expected to be available in the system PATH)
 - **Frontend:** HTML, Tailwind CSS, vanilla JavaScript
 - **Environment Management:** `python-dotenv` (for loading API keys etc. from `.env`)
-- **Containerization:** (Not currently implemented, but a potential future step with Docker)
+- **Containerization:** Docker (Actively being used for server deployment - see `Dockerfile`)
 
-## 2. Development Setup
+## 2. Development Setup / Deployment
 
 - **OS:** Developed on Windows, but should be cross-platform compatible assuming dependencies are met.
 - **Python Environment:** Recommended to use a virtual environment (e.g., `venv`).
@@ -43,21 +43,23 @@
   ```
 - **Running the App:**
   ```bash
-  python "new_complex_flow copy.py" # Or the current main script name
+  python main.py # Or the current main script name
   ```
   Access via `http://localhost:5001` (or the configured host/port).
+- **Running via Docker:** Refer to `Dockerfile` for build instructions. Environment variables (`.env`) need to be passed to the container during runtime. The container environment must support OpenGL for the Manim renderer.
 
 ## 3. Technical Constraints
 
 - **LLM Rate Limits/Costs:** Dependent on Azure/Google API limits and pricing tiers. Complex requests or many revisions can increase costs.
-- **Manim Performance:** Rendering time depends heavily on scene complexity and video length. Long or complex animations can take significant time and CPU resources. Subprocess timeout is set (e.g., 600s) but might need adjustment.
-- **ffmpeg Dependency:** Relies on an external `ffmpeg` installation.
-- **Temporary Storage:** Workflow generates intermediate files (scripts, scene videos, audio). Sufficient disk space is required in the `tmp_requests` directory. Lack of cleanup means this directory will grow over time.
+- **Manim Performance:** Rendering time depends heavily on scene complexity and video length. Using the OpenGL renderer might improve performance for some scenes but requires an environment with OpenGL support. CPU resources are still important. Subprocess timeout is set (e.g., 600s) but might need adjustment.
+- **GPU Usage:** While the OpenGL renderer is enabled, significant GPU acceleration is not guaranteed for all Manim operations. True GPU deployment (e.g., on Azure N-series VMs with NVIDIA drivers and toolkit) is complex and likely unnecessary unless specific GPU-accelerated libraries are used within the Manim scripts or the OpenGL renderer proves highly effective and requires it. ACI does not support GPUs.
+- **ffmpeg Dependency:** Relies on an external `ffmpeg` installation (included in the Docker image).
+- **Temporary Storage:** Workflow generates intermediate files (scripts, scene videos, audio). Sufficient disk space is required in the `tmp_requests` directory within the container or mounted volume. Lack of cleanup means this directory will grow over time.
 - **Error Handling Brittleness:** Relying on LLMs to generate and fix code can be unpredictable. Robust error parsing and retry logic are crucial but may not catch all edge cases. Parsing LLM output (like JSON plans or verdicts) can also be fragile.
 - **Content Filtering:** Azure OpenAI includes content filters that might occasionally block prompts or responses, potentially halting the workflow. Error messages are truncated to mitigate this but might obscure the root cause.
 
 ## 4. Dependencies
 
-- **Python Packages:** See `requirements.txt`. Key ones include `flask`, `langgraph`, `langchain-openai`, `azure-cognitiveservices-speech`, `manim`, `google-generativeai`, `python-dotenv`.
+- **Python Packages:** See `requirements.txt`. Key ones include `flask`, `langgraph`, `langchain-openai`, `azure-cognitiveservices-speech`, `manim`, `google-generativeai`, `python-dotenv`, `opencv-python` (for CV pre-pass), `numpy`.
 - **System Libraries:** `ffmpeg`.
-- **External Services:** Azure OpenAI, Azure Cognitive Services, Google AI (Gemini). Internet connectivity is required to reach these APIs. 
+- **External Services:** Azure OpenAI, Azure Cognitive Services, Google AI (Gemini). Internet connectivity is required to reach these APIs.

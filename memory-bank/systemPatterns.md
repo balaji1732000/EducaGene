@@ -6,7 +6,7 @@
 - **Backend:** Flask web server providing an API endpoint (`/generate`).
 - **Workflow Orchestration:** LangGraph state machine manages the multi-step process of video generation.
 - **AI Core:** Leverages Large Language Models (LLMs, primarily Azure OpenAI/Gemini) for planning, code generation, evaluation, revision, and script generation.
-- **Rendering Engine:** Uses the Manim library (executed as a subprocess) to render Python code into video frames/files.
+- **Rendering Engine:** Uses the Manim library (executed as a subprocess) with the **OpenGL renderer** (`--renderer=opengl`) to render Python code into video frames/files, aiming for potential GPU acceleration.
 - **Voice Synthesis:** Utilizes a Text-to-Speech (TTS) service (Azure Cognitive Speech Services) to generate audio voiceovers.
 - **Media Processing:** Uses `ffmpeg` (via subprocess) for combining video and audio, and potentially for audio manipulation (stretching).
 
@@ -17,19 +17,25 @@ graph TD
 
     subgraph LangGraphWorkflow
         direction LR
-        Start(Start: Setup Request) --> Plan(Plan Video Node - LLM)
-        Plan --> GenerateCode(Generate Full Script Node - LLM)
-        GenerateCode --> Evaluate(Evaluate Code Node - LLM)
-        Evaluate -- REVISION_NEEDED --> GenerateCode
-        Evaluate -- SATISFIED --> Render(Render Combined Video Node - Manim Subprocess)
-        Render -- RENDER_ERROR --> GenerateCode
-        Render -- RENDER_SUCCESS --> GenerateScript(Generate Final Script Node - Gemini Vision)
-        GenerateScript --> GenerateAudio(Generate Audio Node - TTS Subprocess)
-        GenerateAudio --> Combine(Combine Video/Audio Node - ffmpeg Subprocess)
+        Start(Setup Request) --> Plan(Plan Video Node - LLM)
+        Plan --> GenerateScript(Generate Full Script Node - LLM)
+        
+        GenerateScript --> Render(Render Combined Video Node - Manim Subprocess)
+        
+        Render -- RENDER_SUCCESS --> Evaluate(Evaluate Script & Video Node - CV Pre-pass + Gemini Vision)
+        Render -- RENDER_ERROR --> SearchError(Search Error Solution Node - Web Search)
+        
+        SearchError --> GenerateScript # Always retry script gen after searching
+        
+        Evaluate -- REVISION_NEEDED --> GenerateScript # Loop back to fix script based on structured feedback
+        Evaluate -- SATISFIED --> GenerateVoiceover(Generate Final Script Node - Gemini Vision)
+        
+        GenerateVoiceover --> GenerateAudio(Generate Audio Node - Azure TTS)
+        GenerateAudio --> Combine(Combine Video/Audio Node - ffmpeg)
         Combine --> FinalEnd(END)
     end
 
-    LangGraphWorkflow -->|Final State (Video URL/Error)| APIEndpoint
+    LangGraphWorkflow -->|Final State (Video URL/Error/Feedback)| APIEndpoint
     APIEndpoint -->|JSON Response| UserInterface
 ```
 
@@ -60,4 +66,4 @@ graph TD
     - **TTS:** Via `speechsdk`.
     - **ffmpeg:** Via `subprocess.run`.
     - **Filesystem:** Reading/writing scripts, videos, audio files in temporary directories.
-- **State Object:** A dictionary (`ManimWorkflowState`) passed between nodes, carrying all necessary data (user input, intermediate results, file paths, errors, etc.). 
+- **State Object:** A dataclass (`WorkflowState`) passed between nodes, carrying all necessary data (user input, intermediate results, file paths, errors, structured feedback, etc.).
